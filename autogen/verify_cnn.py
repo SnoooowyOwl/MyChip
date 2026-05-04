@@ -84,7 +84,7 @@ def dcache_runtime_ranges() -> list[tuple[str, int, int]]:
         ("FC1 activations", D_FC1, D_FC1 + 10),
         ("final output", D_OUTPUT, D_OUTPUT + 1),
         ("FC scratch", D_SCRATCH, D_SCRATCH + 3 * ROW_STRIDE),
-        ("accum scratch", D_ACCUM, D_ACCUM + CONV2_W * 4),
+        ("accum scratch", D_ACCUM, D_ACCUM + CONV2_H * CONV2_W * 4),
         ("stack guard", D_STACK_TOP + 4 - D_STACK_GUARD_BYTES, D_STACK_TOP + 4),
     ]
 

@@ -47,14 +47,20 @@ conv1_filter_loop:
     mul t1, s9, t0
     add a0, a0, t1
     call acc_write_conv_w0
+    mv a0, s1                            # prime line buffer with input rows 0..2
+    li a1, 16
+    call acc_load_three_rows
     li s10, 0                            # output row
 conv1_row_loop:
     li t0, 14
     bge s10, t0, conv1_next_filter
-    slli t0, s10, 4
+    li t0, 13
+    bge s10, t0, conv1_no_prefetch
+    addi t0, s10, 3                      # prefetch next input row while CONV runs
+    slli t0, t0, 4
     add a0, s1, t0
-    li a1, 16
-    call acc_load_three_rows
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+conv1_no_prefetch:
     call acc_reset_psums
     call acc_start_conv
     call acc_wait_done
@@ -64,6 +70,10 @@ conv1_row_loop:
     add t1, t1, t2
     add a0, s2, t1
     call acc_store_packed_13
+    li t0, 13
+    bge s10, t0, conv1_skip_shift
+    call acc_shift_lines
+conv1_skip_shift:
     addi s10, s10, 1
     j conv1_row_loop
 conv1_next_filter:
@@ -77,17 +87,13 @@ conv1_done:
 run_conv2:
     addi sp, sp, -16
     sw ra, 12(sp)
-    li s9, 0                             # conv2 output row
-conv2_row_loop:
-    li t0, 12
-    bge s9, t0, conv2_done
     mv a0, s7
-    li a1, 11
+    li a1, 132                           # full Conv2 int32 accumulator
     call zero_words
     li s10, 0                            # conv1 input channel
 conv2_channel_loop:
     li t0, 10
-    bge s10, t0, conv2_finish_row
+    bge s10, t0, conv2_postprocess_all
     la a0, conv2_w_packed
     li t0, 12
     mul t1, s10, t0
@@ -95,25 +101,50 @@ conv2_channel_loop:
     call acc_write_conv_w0
     li t0, 224
     mul t1, s10, t0
-    slli t2, s9, 4
-    add t1, t1, t2
-    add a0, s2, t1
+    add s11, s2, t1                      # current Conv1 channel base
+    mv a0, s11                           # prime line buffer with channel rows 0..2
     li a1, 16
     call acc_load_three_rows
+    li s9, 0                             # conv2 output row
+conv2_row_loop:
+    li t0, 12
+    bge s9, t0, conv2_next_channel
+    li t0, 11
+    bge s9, t0, conv2_no_prefetch
+    addi t0, s9, 3                       # prefetch next channel row while CONV runs
+    slli t0, t0, 4
+    add a0, s11, t0
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+conv2_no_prefetch:
     call acc_reset_psums
     call acc_start_conv
     call acc_wait_done
-    mv a0, s7
+    li t0, 44
+    mul t1, s9, t0
+    add a0, s7, t1
     call acc_accumulate_raw_11
+    li t0, 11
+    bge s9, t0, conv2_skip_shift
+    call acc_shift_lines
+conv2_skip_shift:
+    addi s9, s9, 1
+    j conv2_row_loop
+conv2_next_channel:
     addi s10, s10, 1
     j conv2_channel_loop
-conv2_finish_row:
-    mv a0, s7
+conv2_postprocess_all:
+    li s9, 0                             # postprocess Conv2 rows
+conv2_postprocess_loop:
+    li t0, 12
+    bge s9, t0, conv2_done
+    li t0, 44
+    mul t1, s9, t0
+    add a0, s7, t1
     slli t0, s9, 4
     add a1, s3, t0
     call postprocess_accum_11
     addi s9, s9, 1
-    j conv2_row_loop
+    j conv2_postprocess_loop
 conv2_done:
     lw ra, 12(sp)
     addi sp, sp, 16
@@ -226,12 +257,6 @@ acc_set_dma_addr:
 
 acc_dma_shift:
     sw a0, 4(s0)                         # SET_DMA_ADDR
-    nop
-    nop
-    nop
-    nop
-    nop
-    nop
     nop
     nop
     nop
@@ -436,7 +461,7 @@ input0_padded:
     .byte 0xee, 0xdd, 0x63, 0xb5, 0x35, 0x52, 0xd7, 0x6f, 0xef, 0x21, 0xe1, 0xbf, 0x4f, 0x0d, 0xde, 0x00
 
     .align 2
-    .org 0xc00
+    .org 0xe00
 conv1_w_packed:
     .word 0xf610ffea, 0x11f9eefb, 0x000000f7, 0x03fb0a03
     .word 0x06eb02fa, 0x000000fd, 0xfa0816ee, 0xfdfbff0e

@@ -57,7 +57,7 @@ wrote autogen/out/testcases/sample0/expected.txt
 mirrored sample 0 to autogen/out/cnn_accel_one_sample.S
 mirrored sample 0 to autogen/out/icache_initial.hex
 mirrored sample 0 to autogen/out/dcache_initial.hex
-DMA wait nops per row load: 16
+DMA wait nops per row load: 10
 run python3 autogen/verify_cnn.py for mapping, image, and toolchain checks
 ```
 
@@ -137,8 +137,10 @@ The generated assembly assumes:
 - the final one-byte output is stored at `OUTPUT_ADDR` from `cnn_config.py`;
 - stack is placed near the top of the 8 KiB D-cache window at `0x90001ffc`;
 - accelerator DMA reads use fixed 16-byte rows;
-- DMA completion has no status bit, so row loads use 16 `nop`s before
-  `SHIFT_LINES`.
+- FC row loads still use explicit DMA waits because FC compute is only 4 cycles;
+- Conv1 and Conv2 prefetch the next activation row during the current CONV
+  computation, then issue `SHIFT_LINES` after the computation and result
+  handling have completed.
 
 D-cache layout:
 
@@ -150,8 +152,8 @@ D-cache layout:
 | `0x90000b00` | FC1 activations |
 | `OUTPUT_ADDR` from `cnn_config.py` | final output byte |
 | `0x90000b40` | FC scratch rows |
-| `0x90000b80` | int32 accumulation scratch |
-| `0x90000c00` | preloaded weights and lookup tables |
+| `0x90000b80` | full 12x11 int32 Conv2 accumulation scratch |
+| `0x90000e00` | preloaded weights and lookup tables |
 
 The default `OUTPUT_ADDR` is `0x90000b20`. You may change it in
 `cnn_config.py`, but it must remain inside the 8 KiB D-cache window and must not

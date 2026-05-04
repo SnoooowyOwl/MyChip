@@ -94,14 +94,16 @@ single-channel 3x3 convolution.
 For each sample `n` and each output channel `co = 0..9`:
 
 1. Write Conv1 filter `co` into weight group 0.
-2. Stream input rows through the accelerator line buffer using fixed 16-byte
-   DMA reads and `SHIFT_LINES`.
-3. For each 3-row window, start CONV mode.
+2. Prime the accelerator line buffer with input rows 0, 1, and 2.
+3. For each 3-row window, start a DMA prefetch for the next input row before
+   starting CONV mode, except on the last output row.
 4. Poll `STATUS` until done.
 5. Read packed outputs from `BASE + 100`, `104`, `108`, and `112`.
-6. Keep the first 13 outputs for the logical row. No CPU ReLU is needed here
+6. Issue `SHIFT_LINES` after result handling to roll in the prefetched row,
+   except on the last output row.
+7. Keep the first 13 outputs for the logical row. No CPU ReLU is needed here
    because packed CONV outputs are already postprocessed by hardware.
-7. Store the resulting `uint8` row into the Conv1 activation buffer.
+8. Store the resulting `uint8` row into the Conv1 activation buffer.
 
 Expected Conv1 output per sample:
 
@@ -115,21 +117,26 @@ Conv2 requires a sum across 10 Conv1 channels for each spatial 3x3 location.
 The accelerator cannot accumulate across channels in one invocation, so software
 must perform channel accumulation using raw CONV results.
 
-For each sample `n`, output row `r = 0..11`, and output column block:
+For each sample `n`:
 
-1. Initialize software int32 accumulators for the 11 valid output columns.
+1. Initialize a full 12x11 software int32 accumulator buffer.
 2. For each Conv1 channel `ci = 0..9`:
    1. Write the 3x3 slice `conv2_weight[0, ci, :, :]` into weight group 0.
-   2. Stream Conv1 activation rows `r`, `r+1`, and `r+2` for channel `ci` into
-      the accelerator line buffer.
-   3. Start CONV mode and poll `STATUS`.
-   4. Read raw signed sums from `BASE + 120` through `BASE + 160`.
-   5. Accumulate the first 11 raw sums into the software int32 accumulators.
+   2. Prime the accelerator line buffer with Conv1 activation rows 0, 1, and 2
+      for channel `ci`.
+   3. For each output row `r = 0..11`, start a DMA prefetch for row `r+3`
+      before starting CONV mode, except on the last output row.
+   4. Start CONV mode and poll `STATUS`.
+   5. Read raw signed sums from `BASE + 120` through `BASE + 160`.
+   6. Accumulate the first 11 raw sums into the corresponding row of the full
+      software int32 accumulator buffer.
+   7. Issue `SHIFT_LINES` after result handling to roll in the prefetched row,
+      except on the last output row.
 3. After all 10 channels are accumulated, apply final Conv2 postprocessing in
    software:
    - if accumulator is negative, output `0`;
    - otherwise output `accumulator & 0xff`.
-4. Store the result row into the Conv2 activation buffer.
+4. Store the result rows into the Conv2 activation buffer.
 
 Expected Conv2 output per sample:
 
@@ -200,8 +207,8 @@ Software must handle:
 - Final ReLU and low-8-bit truncation after raw-result or software
   accumulation paths.
 - Weight loading before each accelerator invocation.
-- Fixed waits or another synchronization method for DMA completion before
-  issuing `SHIFT_LINES`.
+- Explicit DMA waits for FC row loads, and CONV/DMA overlap where CONV
+  computation provides enough time before `SHIFT_LINES`.
 - CPU fallback for any operation that does not fit the accelerator's fixed
   CONV or FC modes.
 
