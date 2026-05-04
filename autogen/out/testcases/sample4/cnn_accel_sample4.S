@@ -50,6 +50,9 @@ conv1_filter_loop:
     mv a0, s1                            # prime line buffer with input rows 0..2
     li a1, 16
     call acc_load_three_rows
+    li t0, 224
+    mul t1, s9, t0
+    add s8, s2, t1                       # current Conv1 output channel base
     li s10, 0                            # output row
 conv1_row_loop:
     li t0, 14
@@ -67,11 +70,8 @@ conv1_wait_done:
     lw t0, 0(s0)
     li t1, 1
     bne t0, t1, conv1_wait_done
-    li t0, 224
-    mul t1, s9, t0
-    slli t2, s10, 4
-    add t1, t1, t2
-    add a0, s2, t1
+    slli t0, s10, 4
+    add a0, s8, t0
     lw t0, 100(s0)
     sw t0, 0(a0)
     lw t0, 104(s0)
@@ -116,22 +116,11 @@ conv2_channel_loop:
     mv a0, s11                           # prime line buffer with channel rows 0..2
     li a1, 16
     call acc_load_three_rows
-    li s9, 0                             # conv2 output row
-conv2_row_loop:
-    li t0, 12
-    bge s9, t0, conv2_next_channel
-    li t0, 11
-    bge s9, t0, conv2_no_prefetch
-    addi t0, s9, 3                       # prefetch next channel row while CONV runs
-    slli t0, t0, 4
-    add a0, s11, t0
+    addi a0, s11, 48                     # prefetch next channel row while CONV runs
     sw a0, 4(s0)                         # SET_DMA_ADDR
-conv2_no_prefetch:
     li t0, 0x0000ffff                    # START_CONV
     sw t0, 0(s0)
-    li t0, 44
-    mul t1, s9, t0
-    add a0, s7, t1
+    addi a0, s7, 0
     lw t4, 0(a0)
     lw t5, 120(s0)
     add t4, t4, t5
@@ -176,18 +165,613 @@ conv2_no_prefetch:
     lw t5, 160(s0)
     add t4, t4, t5
     sw t4, 40(a0)
-conv2_wait_done:
+conv2_wait_done_r0:
     lw t0, 0(s0)
     li t1, 1
-    bne t0, t1, conv2_wait_done
-    li t0, 11
-    bge s9, t0, conv2_skip_shift
+    bne t0, t1, conv2_wait_done_r0
     li t0, 0x00000200                    # SHIFT_LINES
     sw t0, 0(s0)
-conv2_skip_shift:
-    addi s9, s9, 1
-    j conv2_row_loop
-conv2_next_channel:
+    addi a0, s11, 64                     # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 44
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r1:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r1
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 80                     # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 88
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r2:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r2
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 96                     # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 132
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r3:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r3
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 112                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 176
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r4:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r4
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 128                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 220
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r5:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r5
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 144                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 264
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r6:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r6
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 160                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 308
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r7:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r7
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 176                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 352
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r8:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r8
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 192                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 396
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r9:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r9
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    addi a0, s11, 208                    # prefetch next channel row while CONV runs
+    sw a0, 4(s0)                         # SET_DMA_ADDR
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 440
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r10:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r10
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+    addi a0, s7, 484
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done_r11:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done_r11
     addi s10, s10, 1
     j conv2_channel_loop
 conv2_postprocess_all:
@@ -214,62 +798,867 @@ run_fc1:
     mv a0, s7                            # reuse accumulator scratch for 10 FC1 sums
     li a1, 10
     call zero_words
-    li s10, 0                            # FC1 chunk
-fc1_chunk_loop:
-    li t0, 4
-    bge s10, t0, fc1_postprocess
-    li t0, 36
-    mul a0, s10, t0                      # chunk start feature
-    call fill_fc_scratch_conv2
+    la s8, fc1_w_packed
+    lbu t0, 0(s3)
+    sb t0, 0(s6)
+    lbu t0, 1(s3)
+    sb t0, 1(s6)
+    lbu t0, 2(s3)
+    sb t0, 2(s6)
+    lbu t0, 3(s3)
+    sb t0, 16(s6)
+    lbu t0, 4(s3)
+    sb t0, 17(s6)
+    lbu t0, 5(s3)
+    sb t0, 18(s6)
+    lbu t0, 6(s3)
+    sb t0, 32(s6)
+    lbu t0, 7(s3)
+    sb t0, 33(s6)
+    lbu t0, 8(s3)
+    sb t0, 34(s6)
+    lbu t0, 9(s3)
+    sb t0, 3(s6)
+    lbu t0, 10(s3)
+    sb t0, 4(s6)
+    lbu t0, 16(s3)
+    sb t0, 5(s6)
+    lbu t0, 17(s3)
+    sb t0, 19(s6)
+    lbu t0, 18(s3)
+    sb t0, 20(s6)
+    lbu t0, 19(s3)
+    sb t0, 21(s6)
+    lbu t0, 20(s3)
+    sb t0, 35(s6)
+    lbu t0, 21(s3)
+    sb t0, 36(s6)
+    lbu t0, 22(s3)
+    sb t0, 37(s6)
+    lbu t0, 23(s3)
+    sb t0, 6(s6)
+    lbu t0, 24(s3)
+    sb t0, 7(s6)
+    lbu t0, 25(s3)
+    sb t0, 8(s6)
+    lbu t0, 26(s3)
+    sb t0, 22(s6)
+    lbu t0, 32(s3)
+    sb t0, 23(s6)
+    lbu t0, 33(s3)
+    sb t0, 24(s6)
+    lbu t0, 34(s3)
+    sb t0, 38(s6)
+    lbu t0, 35(s3)
+    sb t0, 39(s6)
+    lbu t0, 36(s3)
+    sb t0, 40(s6)
+    lbu t0, 37(s3)
+    sb t0, 9(s6)
+    lbu t0, 38(s3)
+    sb t0, 10(s6)
+    lbu t0, 39(s3)
+    sb t0, 11(s6)
+    lbu t0, 40(s3)
+    sb t0, 25(s6)
+    lbu t0, 41(s3)
+    sb t0, 26(s6)
+    lbu t0, 42(s3)
+    sb t0, 27(s6)
+    lbu t0, 48(s3)
+    sb t0, 41(s6)
+    lbu t0, 49(s3)
+    sb t0, 42(s6)
+    lbu t0, 50(s3)
+    sb t0, 43(s6)
     mv a0, s6
     li a1, 16
     call acc_load_three_rows
-    li s9, 0                             # FC1 output neuron
-fc1_neuron_loop:
-    li t0, 10
-    bge s9, t0, fc1_next_chunk
-    la a0, fc1_w_packed
-    slli t0, s9, 2                       # neuron * 4 chunks
-    add t0, t0, s10
-    li t1, 48                            # 12 words per FC invocation
-    mul t0, t0, t1
-    add a0, a0, t0
+    addi a0, s8, 0                       # FC1 neuron 0, chunk 0 weights
     call acc_write_fc_weights
     li t0, 0x000fffff                    # START_FC
     sw t0, 0(s0)
-fc1_wait_done:
+fc1_wait_done_c0_n0:
     lw t0, 0(s0)
     li t1, 1
-    bne t0, t1, fc1_wait_done
+    bne t0, t1, fc1_wait_done_c0_n0
     lw t0, 100(s0)                       # FC raw signed int32
-    slli t1, s9, 2
-    add t1, s7, t1
-    lw t2, 0(t1)
+    lw t2, 0(s7)
     add t2, t2, t0
-    sw t2, 0(t1)
-    addi s9, s9, 1
-    j fc1_neuron_loop
-fc1_next_chunk:
-    addi s10, s10, 1
-    j fc1_chunk_loop
-fc1_postprocess:
-    li s9, 0                             # postprocess FC1 sums
-fc1_postprocess_loop:
-    li t0, 10
-    bge s9, t0, fc1_done
-    slli t0, s9, 2
-    add t1, s7, t0
-    lw t2, 0(t1)
-    blt t2, zero, fc1_store_zero
-    andi t0, t2, 255
-    j fc1_store_value
-fc1_store_zero:
+    sw t2, 0(s7)
+    addi a0, s8, 192                     # FC1 neuron 1, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n1:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n1
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 4(s7)
+    add t2, t2, t0
+    sw t2, 4(s7)
+    addi a0, s8, 384                     # FC1 neuron 2, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n2:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n2
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 8(s7)
+    add t2, t2, t0
+    sw t2, 8(s7)
+    addi a0, s8, 576                     # FC1 neuron 3, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n3:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n3
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 12(s7)
+    add t2, t2, t0
+    sw t2, 12(s7)
+    addi a0, s8, 768                     # FC1 neuron 4, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n4:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n4
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 16(s7)
+    add t2, t2, t0
+    sw t2, 16(s7)
+    addi a0, s8, 960                     # FC1 neuron 5, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n5:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n5
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 20(s7)
+    add t2, t2, t0
+    sw t2, 20(s7)
+    addi a0, s8, 1152                    # FC1 neuron 6, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n6:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n6
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 24(s7)
+    add t2, t2, t0
+    sw t2, 24(s7)
+    addi a0, s8, 1344                    # FC1 neuron 7, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n7:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n7
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 28(s7)
+    add t2, t2, t0
+    sw t2, 28(s7)
+    addi a0, s8, 1536                    # FC1 neuron 8, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n8:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n8
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 32(s7)
+    add t2, t2, t0
+    sw t2, 32(s7)
+    addi a0, s8, 1728                    # FC1 neuron 9, chunk 0 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c0_n9:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c0_n9
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 36(s7)
+    add t2, t2, t0
+    sw t2, 36(s7)
+    lbu t0, 51(s3)
+    sb t0, 0(s6)
+    lbu t0, 52(s3)
+    sb t0, 1(s6)
+    lbu t0, 53(s3)
+    sb t0, 2(s6)
+    lbu t0, 54(s3)
+    sb t0, 16(s6)
+    lbu t0, 55(s3)
+    sb t0, 17(s6)
+    lbu t0, 56(s3)
+    sb t0, 18(s6)
+    lbu t0, 57(s3)
+    sb t0, 32(s6)
+    lbu t0, 58(s3)
+    sb t0, 33(s6)
+    lbu t0, 64(s3)
+    sb t0, 34(s6)
+    lbu t0, 65(s3)
+    sb t0, 3(s6)
+    lbu t0, 66(s3)
+    sb t0, 4(s6)
+    lbu t0, 67(s3)
+    sb t0, 5(s6)
+    lbu t0, 68(s3)
+    sb t0, 19(s6)
+    lbu t0, 69(s3)
+    sb t0, 20(s6)
+    lbu t0, 70(s3)
+    sb t0, 21(s6)
+    lbu t0, 71(s3)
+    sb t0, 35(s6)
+    lbu t0, 72(s3)
+    sb t0, 36(s6)
+    lbu t0, 73(s3)
+    sb t0, 37(s6)
+    lbu t0, 74(s3)
+    sb t0, 6(s6)
+    lbu t0, 80(s3)
+    sb t0, 7(s6)
+    lbu t0, 81(s3)
+    sb t0, 8(s6)
+    lbu t0, 82(s3)
+    sb t0, 22(s6)
+    lbu t0, 83(s3)
+    sb t0, 23(s6)
+    lbu t0, 84(s3)
+    sb t0, 24(s6)
+    lbu t0, 85(s3)
+    sb t0, 38(s6)
+    lbu t0, 86(s3)
+    sb t0, 39(s6)
+    lbu t0, 87(s3)
+    sb t0, 40(s6)
+    lbu t0, 88(s3)
+    sb t0, 9(s6)
+    lbu t0, 89(s3)
+    sb t0, 10(s6)
+    lbu t0, 90(s3)
+    sb t0, 11(s6)
+    lbu t0, 96(s3)
+    sb t0, 25(s6)
+    lbu t0, 97(s3)
+    sb t0, 26(s6)
+    lbu t0, 98(s3)
+    sb t0, 27(s6)
+    lbu t0, 99(s3)
+    sb t0, 41(s6)
+    lbu t0, 100(s3)
+    sb t0, 42(s6)
+    lbu t0, 101(s3)
+    sb t0, 43(s6)
+    mv a0, s6
+    li a1, 16
+    call acc_load_three_rows
+    addi a0, s8, 48                      # FC1 neuron 0, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n0:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n0
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 0(s7)
+    add t2, t2, t0
+    sw t2, 0(s7)
+    addi a0, s8, 240                     # FC1 neuron 1, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n1:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n1
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 4(s7)
+    add t2, t2, t0
+    sw t2, 4(s7)
+    addi a0, s8, 432                     # FC1 neuron 2, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n2:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n2
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 8(s7)
+    add t2, t2, t0
+    sw t2, 8(s7)
+    addi a0, s8, 624                     # FC1 neuron 3, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n3:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n3
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 12(s7)
+    add t2, t2, t0
+    sw t2, 12(s7)
+    addi a0, s8, 816                     # FC1 neuron 4, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n4:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n4
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 16(s7)
+    add t2, t2, t0
+    sw t2, 16(s7)
+    addi a0, s8, 1008                    # FC1 neuron 5, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n5:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n5
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 20(s7)
+    add t2, t2, t0
+    sw t2, 20(s7)
+    addi a0, s8, 1200                    # FC1 neuron 6, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n6:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n6
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 24(s7)
+    add t2, t2, t0
+    sw t2, 24(s7)
+    addi a0, s8, 1392                    # FC1 neuron 7, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n7:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n7
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 28(s7)
+    add t2, t2, t0
+    sw t2, 28(s7)
+    addi a0, s8, 1584                    # FC1 neuron 8, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n8:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n8
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 32(s7)
+    add t2, t2, t0
+    sw t2, 32(s7)
+    addi a0, s8, 1776                    # FC1 neuron 9, chunk 1 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c1_n9:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c1_n9
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 36(s7)
+    add t2, t2, t0
+    sw t2, 36(s7)
+    lbu t0, 102(s3)
+    sb t0, 0(s6)
+    lbu t0, 103(s3)
+    sb t0, 1(s6)
+    lbu t0, 104(s3)
+    sb t0, 2(s6)
+    lbu t0, 105(s3)
+    sb t0, 16(s6)
+    lbu t0, 106(s3)
+    sb t0, 17(s6)
+    lbu t0, 112(s3)
+    sb t0, 18(s6)
+    lbu t0, 113(s3)
+    sb t0, 32(s6)
+    lbu t0, 114(s3)
+    sb t0, 33(s6)
+    lbu t0, 115(s3)
+    sb t0, 34(s6)
+    lbu t0, 116(s3)
+    sb t0, 3(s6)
+    lbu t0, 117(s3)
+    sb t0, 4(s6)
+    lbu t0, 118(s3)
+    sb t0, 5(s6)
+    lbu t0, 119(s3)
+    sb t0, 19(s6)
+    lbu t0, 120(s3)
+    sb t0, 20(s6)
+    lbu t0, 121(s3)
+    sb t0, 21(s6)
+    lbu t0, 122(s3)
+    sb t0, 35(s6)
+    lbu t0, 128(s3)
+    sb t0, 36(s6)
+    lbu t0, 129(s3)
+    sb t0, 37(s6)
+    lbu t0, 130(s3)
+    sb t0, 6(s6)
+    lbu t0, 131(s3)
+    sb t0, 7(s6)
+    lbu t0, 132(s3)
+    sb t0, 8(s6)
+    lbu t0, 133(s3)
+    sb t0, 22(s6)
+    lbu t0, 134(s3)
+    sb t0, 23(s6)
+    lbu t0, 135(s3)
+    sb t0, 24(s6)
+    lbu t0, 136(s3)
+    sb t0, 38(s6)
+    lbu t0, 137(s3)
+    sb t0, 39(s6)
+    lbu t0, 138(s3)
+    sb t0, 40(s6)
+    lbu t0, 144(s3)
+    sb t0, 9(s6)
+    lbu t0, 145(s3)
+    sb t0, 10(s6)
+    lbu t0, 146(s3)
+    sb t0, 11(s6)
+    lbu t0, 147(s3)
+    sb t0, 25(s6)
+    lbu t0, 148(s3)
+    sb t0, 26(s6)
+    lbu t0, 149(s3)
+    sb t0, 27(s6)
+    lbu t0, 150(s3)
+    sb t0, 41(s6)
+    lbu t0, 151(s3)
+    sb t0, 42(s6)
+    lbu t0, 152(s3)
+    sb t0, 43(s6)
+    mv a0, s6
+    li a1, 16
+    call acc_load_three_rows
+    addi a0, s8, 96                      # FC1 neuron 0, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n0:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n0
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 0(s7)
+    add t2, t2, t0
+    sw t2, 0(s7)
+    addi a0, s8, 288                     # FC1 neuron 1, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n1:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n1
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 4(s7)
+    add t2, t2, t0
+    sw t2, 4(s7)
+    addi a0, s8, 480                     # FC1 neuron 2, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n2:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n2
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 8(s7)
+    add t2, t2, t0
+    sw t2, 8(s7)
+    addi a0, s8, 672                     # FC1 neuron 3, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n3:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n3
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 12(s7)
+    add t2, t2, t0
+    sw t2, 12(s7)
+    addi a0, s8, 864                     # FC1 neuron 4, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n4:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n4
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 16(s7)
+    add t2, t2, t0
+    sw t2, 16(s7)
+    addi a0, s8, 1056                    # FC1 neuron 5, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n5:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n5
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 20(s7)
+    add t2, t2, t0
+    sw t2, 20(s7)
+    addi a0, s8, 1248                    # FC1 neuron 6, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n6:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n6
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 24(s7)
+    add t2, t2, t0
+    sw t2, 24(s7)
+    addi a0, s8, 1440                    # FC1 neuron 7, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n7:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n7
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 28(s7)
+    add t2, t2, t0
+    sw t2, 28(s7)
+    addi a0, s8, 1632                    # FC1 neuron 8, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n8:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n8
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 32(s7)
+    add t2, t2, t0
+    sw t2, 32(s7)
+    addi a0, s8, 1824                    # FC1 neuron 9, chunk 2 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c2_n9:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c2_n9
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 36(s7)
+    add t2, t2, t0
+    sw t2, 36(s7)
+    lbu t0, 153(s3)
+    sb t0, 0(s6)
+    lbu t0, 154(s3)
+    sb t0, 1(s6)
+    lbu t0, 160(s3)
+    sb t0, 2(s6)
+    lbu t0, 161(s3)
+    sb t0, 16(s6)
+    lbu t0, 162(s3)
+    sb t0, 17(s6)
+    lbu t0, 163(s3)
+    sb t0, 18(s6)
+    lbu t0, 164(s3)
+    sb t0, 32(s6)
+    lbu t0, 165(s3)
+    sb t0, 33(s6)
+    lbu t0, 166(s3)
+    sb t0, 34(s6)
+    lbu t0, 167(s3)
+    sb t0, 3(s6)
+    lbu t0, 168(s3)
+    sb t0, 4(s6)
+    lbu t0, 169(s3)
+    sb t0, 5(s6)
+    lbu t0, 170(s3)
+    sb t0, 19(s6)
+    lbu t0, 176(s3)
+    sb t0, 20(s6)
+    lbu t0, 177(s3)
+    sb t0, 21(s6)
+    lbu t0, 178(s3)
+    sb t0, 35(s6)
+    lbu t0, 179(s3)
+    sb t0, 36(s6)
+    lbu t0, 180(s3)
+    sb t0, 37(s6)
+    lbu t0, 181(s3)
+    sb t0, 6(s6)
+    lbu t0, 182(s3)
+    sb t0, 7(s6)
+    lbu t0, 183(s3)
+    sb t0, 8(s6)
+    lbu t0, 184(s3)
+    sb t0, 22(s6)
+    lbu t0, 185(s3)
+    sb t0, 23(s6)
+    lbu t0, 186(s3)
+    sb t0, 24(s6)
     li t0, 0
-fc1_store_value:
-    add t1, s4, s9
-    sb t0, 0(t1)
-    addi s9, s9, 1
-    j fc1_postprocess_loop
+    sb t0, 38(s6)
+    li t0, 0
+    sb t0, 39(s6)
+    li t0, 0
+    sb t0, 40(s6)
+    li t0, 0
+    sb t0, 9(s6)
+    li t0, 0
+    sb t0, 10(s6)
+    li t0, 0
+    sb t0, 11(s6)
+    li t0, 0
+    sb t0, 25(s6)
+    li t0, 0
+    sb t0, 26(s6)
+    li t0, 0
+    sb t0, 27(s6)
+    li t0, 0
+    sb t0, 41(s6)
+    li t0, 0
+    sb t0, 42(s6)
+    li t0, 0
+    sb t0, 43(s6)
+    mv a0, s6
+    li a1, 16
+    call acc_load_three_rows
+    addi a0, s8, 144                     # FC1 neuron 0, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n0:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n0
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 0(s7)
+    add t2, t2, t0
+    sw t2, 0(s7)
+    addi a0, s8, 336                     # FC1 neuron 1, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n1:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n1
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 4(s7)
+    add t2, t2, t0
+    sw t2, 4(s7)
+    addi a0, s8, 528                     # FC1 neuron 2, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n2:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n2
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 8(s7)
+    add t2, t2, t0
+    sw t2, 8(s7)
+    addi a0, s8, 720                     # FC1 neuron 3, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n3:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n3
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 12(s7)
+    add t2, t2, t0
+    sw t2, 12(s7)
+    addi a0, s8, 912                     # FC1 neuron 4, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n4:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n4
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 16(s7)
+    add t2, t2, t0
+    sw t2, 16(s7)
+    addi a0, s8, 1104                    # FC1 neuron 5, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n5:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n5
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 20(s7)
+    add t2, t2, t0
+    sw t2, 20(s7)
+    addi a0, s8, 1296                    # FC1 neuron 6, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n6:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n6
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 24(s7)
+    add t2, t2, t0
+    sw t2, 24(s7)
+    addi a0, s8, 1488                    # FC1 neuron 7, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n7:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n7
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 28(s7)
+    add t2, t2, t0
+    sw t2, 28(s7)
+    addi a0, s8, 1680                    # FC1 neuron 8, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n8:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n8
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 32(s7)
+    add t2, t2, t0
+    sw t2, 32(s7)
+    addi a0, s8, 1872                    # FC1 neuron 9, chunk 3 weights
+    call acc_write_fc_weights
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done_c3_n9:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done_c3_n9
+    lw t0, 100(s0)                       # FC raw signed int32
+    lw t2, 36(s7)
+    add t2, t2, t0
+    sw t2, 36(s7)
+    lw t2, 0(s7)
+    blt t2, zero, fc1_store_zero_0
+    andi t0, t2, 255
+    j fc1_store_value_0
+fc1_store_zero_0:
+    li t0, 0
+fc1_store_value_0:
+    sb t0, 0(s4)
+    lw t2, 4(s7)
+    blt t2, zero, fc1_store_zero_1
+    andi t0, t2, 255
+    j fc1_store_value_1
+fc1_store_zero_1:
+    li t0, 0
+fc1_store_value_1:
+    sb t0, 1(s4)
+    lw t2, 8(s7)
+    blt t2, zero, fc1_store_zero_2
+    andi t0, t2, 255
+    j fc1_store_value_2
+fc1_store_zero_2:
+    li t0, 0
+fc1_store_value_2:
+    sb t0, 2(s4)
+    lw t2, 12(s7)
+    blt t2, zero, fc1_store_zero_3
+    andi t0, t2, 255
+    j fc1_store_value_3
+fc1_store_zero_3:
+    li t0, 0
+fc1_store_value_3:
+    sb t0, 3(s4)
+    lw t2, 16(s7)
+    blt t2, zero, fc1_store_zero_4
+    andi t0, t2, 255
+    j fc1_store_value_4
+fc1_store_zero_4:
+    li t0, 0
+fc1_store_value_4:
+    sb t0, 4(s4)
+    lw t2, 20(s7)
+    blt t2, zero, fc1_store_zero_5
+    andi t0, t2, 255
+    j fc1_store_value_5
+fc1_store_zero_5:
+    li t0, 0
+fc1_store_value_5:
+    sb t0, 5(s4)
+    lw t2, 24(s7)
+    blt t2, zero, fc1_store_zero_6
+    andi t0, t2, 255
+    j fc1_store_value_6
+fc1_store_zero_6:
+    li t0, 0
+fc1_store_value_6:
+    sb t0, 6(s4)
+    lw t2, 28(s7)
+    blt t2, zero, fc1_store_zero_7
+    andi t0, t2, 255
+    j fc1_store_value_7
+fc1_store_zero_7:
+    li t0, 0
+fc1_store_value_7:
+    sb t0, 7(s4)
+    lw t2, 32(s7)
+    blt t2, zero, fc1_store_zero_8
+    andi t0, t2, 255
+    j fc1_store_value_8
+fc1_store_zero_8:
+    li t0, 0
+fc1_store_value_8:
+    sb t0, 8(s4)
+    lw t2, 36(s7)
+    blt t2, zero, fc1_store_zero_9
+    andi t0, t2, 255
+    j fc1_store_value_9
+fc1_store_zero_9:
+    li t0, 0
+fc1_store_value_9:
+    sb t0, 9(s4)
 fc1_done:
     lw ra, 12(sp)
     addi sp, sp, 16
@@ -278,9 +1667,78 @@ fc1_done:
 run_fc2:
     addi sp, sp, -16
     sw ra, 12(sp)
-    mv a0, s4
-    li a1, 10
-    call fill_fc_scratch_linear
+    lbu t0, 0(s4)
+    sb t0, 0(s6)
+    lbu t0, 1(s4)
+    sb t0, 1(s6)
+    lbu t0, 2(s4)
+    sb t0, 2(s6)
+    lbu t0, 3(s4)
+    sb t0, 16(s6)
+    lbu t0, 4(s4)
+    sb t0, 17(s6)
+    lbu t0, 5(s4)
+    sb t0, 18(s6)
+    lbu t0, 6(s4)
+    sb t0, 32(s6)
+    lbu t0, 7(s4)
+    sb t0, 33(s6)
+    lbu t0, 8(s4)
+    sb t0, 34(s6)
+    lbu t0, 9(s4)
+    sb t0, 3(s6)
+    li t0, 0
+    sb t0, 4(s6)
+    li t0, 0
+    sb t0, 5(s6)
+    li t0, 0
+    sb t0, 19(s6)
+    li t0, 0
+    sb t0, 20(s6)
+    li t0, 0
+    sb t0, 21(s6)
+    li t0, 0
+    sb t0, 35(s6)
+    li t0, 0
+    sb t0, 36(s6)
+    li t0, 0
+    sb t0, 37(s6)
+    li t0, 0
+    sb t0, 6(s6)
+    li t0, 0
+    sb t0, 7(s6)
+    li t0, 0
+    sb t0, 8(s6)
+    li t0, 0
+    sb t0, 22(s6)
+    li t0, 0
+    sb t0, 23(s6)
+    li t0, 0
+    sb t0, 24(s6)
+    li t0, 0
+    sb t0, 38(s6)
+    li t0, 0
+    sb t0, 39(s6)
+    li t0, 0
+    sb t0, 40(s6)
+    li t0, 0
+    sb t0, 9(s6)
+    li t0, 0
+    sb t0, 10(s6)
+    li t0, 0
+    sb t0, 11(s6)
+    li t0, 0
+    sb t0, 25(s6)
+    li t0, 0
+    sb t0, 26(s6)
+    li t0, 0
+    sb t0, 27(s6)
+    li t0, 0
+    sb t0, 41(s6)
+    li t0, 0
+    sb t0, 42(s6)
+    li t0, 0
+    sb t0, 43(s6)
     la a0, fc2_w_packed
     call acc_write_fc_weights
     mv a0, s6
@@ -408,36 +1866,6 @@ acc_write_fc_weights:
     ret
 
     # CNN schedule helper subroutines.
-acc_store_packed_13:
-    lw t0, 100(s0)
-    sw t0, 0(a0)
-    lw t0, 104(s0)
-    sw t0, 4(a0)
-    lw t0, 108(s0)
-    sw t0, 8(a0)
-    lw t0, 112(s0)
-    sb t0, 12(a0)
-    ret
-
-acc_accumulate_raw_11:
-    li t0, 0
-acc_accumulate_raw_11_loop:
-    li t1, 11
-    bge t0, t1, acc_accumulate_raw_11_done
-    slli t2, t0, 2
-    add t3, a0, t2
-    lw t4, 0(t3)
-    li t5, 120
-    add t5, t5, t2
-    add t6, s0, t5
-    lw t5, 0(t6)
-    add t4, t4, t5
-    sw t4, 0(t3)
-    addi t0, t0, 1
-    j acc_accumulate_raw_11_loop
-acc_accumulate_raw_11_done:
-    ret
-
 zero_words:
     beq a1, zero, zero_words_done
 zero_words_loop:
@@ -467,56 +1895,6 @@ postprocess_accum_11_store:
     addi t0, t0, 1
     j postprocess_accum_11_loop
 postprocess_accum_11_done:
-    ret
-
-fill_fc_scratch_conv2:
-    li t0, 0
-    la t1, fc_scratch_offsets
-    la t2, conv2_flat_offsets
-fill_fc_scratch_conv2_loop:
-    li t3, 36
-    bge t0, t3, fill_fc_scratch_conv2_done
-    add t4, a0, t0                       # global feature index
-    lbu t5, 0(t1)                        # scratch byte offset
-    add t6, s6, t5
-    li t3, 132
-    bge t4, t3, fill_fc_scratch_conv2_zero
-    slli t5, t4, 1
-    add t5, t2, t5
-    lhu t5, 0(t5)
-    add t5, s3, t5
-    lbu t5, 0(t5)
-    j fill_fc_scratch_conv2_store
-fill_fc_scratch_conv2_zero:
-    li t5, 0
-fill_fc_scratch_conv2_store:
-    sb t5, 0(t6)
-    addi t0, t0, 1
-    addi t1, t1, 1
-    j fill_fc_scratch_conv2_loop
-fill_fc_scratch_conv2_done:
-    ret
-
-fill_fc_scratch_linear:
-    li t0, 0
-    la t1, fc_scratch_offsets
-fill_fc_scratch_linear_loop:
-    li t2, 36
-    bge t0, t2, fill_fc_scratch_linear_done
-    lbu t3, 0(t1)
-    add t4, s6, t3
-    bge t0, a1, fill_fc_scratch_linear_zero
-    add t5, a0, t0
-    lbu t5, 0(t5)
-    j fill_fc_scratch_linear_store
-fill_fc_scratch_linear_zero:
-    li t5, 0
-fill_fc_scratch_linear_store:
-    sb t5, 0(t4)
-    addi t0, t0, 1
-    addi t1, t1, 1
-    j fill_fc_scratch_linear_loop
-fill_fc_scratch_linear_done:
     ret
 
     .section .dcache_init,"aw"
@@ -691,29 +2069,3 @@ fc2_w_packed:
     .word 0x00f31a00, 0x1fe400e0, 0x00000000, 0x0000001f
     .word 0x00000000, 0x00000000, 0x00000000, 0x00000000
     .word 0x00000000, 0x00000000, 0x00000000, 0x00000000
-
-    .align 1
-fc_scratch_offsets:
-    .byte 0x00, 0x01, 0x02, 0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x03, 0x04, 0x05, 0x13, 0x14, 0x15, 0x23
-    .byte 0x24, 0x25, 0x06, 0x07, 0x08, 0x16, 0x17, 0x18, 0x26, 0x27, 0x28, 0x09, 0x0a, 0x0b, 0x19, 0x1a
-    .byte 0x1b, 0x29, 0x2a, 0x2b
-
-    .align 1
-conv2_flat_offsets:
-    .half 0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007
-    .half 0x0008, 0x0009, 0x000a, 0x0010, 0x0011, 0x0012, 0x0013, 0x0014
-    .half 0x0015, 0x0016, 0x0017, 0x0018, 0x0019, 0x001a, 0x0020, 0x0021
-    .half 0x0022, 0x0023, 0x0024, 0x0025, 0x0026, 0x0027, 0x0028, 0x0029
-    .half 0x002a, 0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036
-    .half 0x0037, 0x0038, 0x0039, 0x003a, 0x0040, 0x0041, 0x0042, 0x0043
-    .half 0x0044, 0x0045, 0x0046, 0x0047, 0x0048, 0x0049, 0x004a, 0x0050
-    .half 0x0051, 0x0052, 0x0053, 0x0054, 0x0055, 0x0056, 0x0057, 0x0058
-    .half 0x0059, 0x005a, 0x0060, 0x0061, 0x0062, 0x0063, 0x0064, 0x0065
-    .half 0x0066, 0x0067, 0x0068, 0x0069, 0x006a, 0x0070, 0x0071, 0x0072
-    .half 0x0073, 0x0074, 0x0075, 0x0076, 0x0077, 0x0078, 0x0079, 0x007a
-    .half 0x0080, 0x0081, 0x0082, 0x0083, 0x0084, 0x0085, 0x0086, 0x0087
-    .half 0x0088, 0x0089, 0x008a, 0x0090, 0x0091, 0x0092, 0x0093, 0x0094
-    .half 0x0095, 0x0096, 0x0097, 0x0098, 0x0099, 0x009a, 0x00a0, 0x00a1
-    .half 0x00a2, 0x00a3, 0x00a4, 0x00a5, 0x00a6, 0x00a7, 0x00a8, 0x00a9
-    .half 0x00aa, 0x00b0, 0x00b1, 0x00b2, 0x00b3, 0x00b4, 0x00b5, 0x00b6
-    .half 0x00b7, 0x00b8, 0x00b9, 0x00ba

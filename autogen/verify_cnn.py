@@ -19,6 +19,7 @@ from autogen.cnn_config import (
     CONV2_H,
     CONV2_ROW_STRIDE,
     CONV2_W,
+    COMBINED_SRAM_WINDOW_BYTES,
     D_ACCUM,
     D_CONST,
     D_CONV1,
@@ -62,11 +63,11 @@ def static_check_assembly(asm: str, rodata: dict[str, list[int]]) -> None:
         "call acc_wait_done",
         "call acc_store_packed_13",
         "call acc_accumulate_raw_11",
+        "call fill_fc_scratch_conv2",
+        "call fill_fc_scratch_linear",
     ):
         if forbidden in asm:
             raise AssertionError(f"generated assembly still contains hot helper call: {forbidden}")
-    if "fc1_chunk_loop:" not in asm or "fc1_neuron_loop:" not in asm:
-        raise AssertionError("generated assembly is missing chunk-major FC1 loop labels")
 
     for match in re.finditer(r"\b(\d+)\(s0\)", asm):
         offset = int(match.group(1))
@@ -79,10 +80,6 @@ def static_check_assembly(asm: str, rodata: dict[str, list[int]]) -> None:
         raise AssertionError(f"D-cache runtime layout exceeds 8 KiB window: max {max_runtime_addr:#x}")
     check_no_overlaps(runtime_ranges)
 
-    if len(rodata["fc_scratch_offsets"]) != FC_CHUNK:
-        raise AssertionError("bad FC scratch offset table length")
-    if len(rodata["conv2_flat_offsets"]) != FC1_IN:
-        raise AssertionError("bad Conv2 flat offset table length")
     check_dcache_const_layout(rodata)
 
 
@@ -125,16 +122,6 @@ def check_dcache_const_layout(rodata: dict[str, list[int]]) -> None:
         const_ranges.append((name, addr, end))
         addr = end
 
-    addr = align_up(addr, 2)
-    end = addr + len(rodata["fc_scratch_offsets"])
-    const_ranges.append(("fc_scratch_offsets", addr, end))
-    addr = end
-
-    addr = align_up(addr, 2)
-    end = addr + len(rodata["conv2_flat_offsets"]) * 2
-    const_ranges.append(("conv2_flat_offsets", addr, end))
-    addr = end
-
     if addr - DCACHE_BASE > SRAM_WINDOW_BYTES:
         raise AssertionError(f"D-cache constants exceed 8 KiB window: end {addr:#x}")
 
@@ -163,6 +150,10 @@ def check_linked_sections(objdump_header: str) -> None:
             raise AssertionError(f"{section} linked at {vma:#x}, expected {base:#x}")
         if size > SRAM_WINDOW_BYTES:
             raise AssertionError(f"{section} exceeds 8 KiB SRAM window: {size} bytes")
+
+    total = sum(size for size, _ in sections.values())
+    if total > COMBINED_SRAM_WINDOW_BYTES:
+        raise AssertionError(f"combined I/D SRAM image exceeds 16 KiB: {total} bytes")
 
 
 def check_no_compressed_instructions(objdump_disassembly: str) -> None:

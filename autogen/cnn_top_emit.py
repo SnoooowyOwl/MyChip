@@ -55,15 +55,29 @@ def emit_wait_done_inline(e: Rv32Emitter, label: str) -> None:
     e.inst("bne", "t0", "t1", label)
 
 
-def emit_store_packed_13_inline(e: Rv32Emitter) -> None:
+def fc_scratch_offset(feature: int) -> int:
+    group = feature // 9
+    inner = feature % 9
+    row = inner // 3
+    col = group * 3 + (inner % 3)
+    return row * ROW_STRIDE + col
+
+
+def conv2_padded_offset(feature: int) -> int:
+    row = feature // CONV2_W
+    col = feature % CONV2_W
+    return row * CONV2_ROW_STRIDE + col
+
+
+def emit_store_packed_13_inline(e: Rv32Emitter, base_reg: str = "a0", row_offset: int = 0) -> None:
     e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)")
-    e.inst("sw", "t0", "0(a0)")
+    e.inst("sw", "t0", f"{row_offset}({base_reg})")
     e.inst("lw", "t0", f"{OFF_RES_PACK_1}(s0)")
-    e.inst("sw", "t0", "4(a0)")
+    e.inst("sw", "t0", f"{row_offset + 4}({base_reg})")
     e.inst("lw", "t0", f"{OFF_RES_PACK_2}(s0)")
-    e.inst("sw", "t0", "8(a0)")
+    e.inst("sw", "t0", f"{row_offset + 8}({base_reg})")
     e.inst("lw", "t0", f"{OFF_RES_PACK_3}(s0)")
-    e.inst("sb", "t0", "12(a0)")
+    e.inst("sb", "t0", f"{row_offset + 12}({base_reg})")
 
 
 def emit_conv2_accumulate_raw_11_unrolled(e: Rv32Emitter) -> None:
@@ -74,6 +88,85 @@ def emit_conv2_accumulate_raw_11_unrolled(e: Rv32Emitter) -> None:
         e.inst("lw", "t5", f"{raw_offset}(s0)")
         e.inst("add", "t4", "t4", "t5")
         e.inst("sw", "t4", f"{word_offset}(a0)")
+
+
+def emit_fill_fc_scratch_conv2_chunk_inline(e: Rv32Emitter, chunk: int) -> None:
+    start = chunk * FC_CHUNK
+    for feature in range(FC_CHUNK):
+        src_feature = start + feature
+        dst_offset = fc_scratch_offset(feature)
+        if src_feature < CONV2_H * CONV2_W:
+            e.inst("lbu", "t0", f"{conv2_padded_offset(src_feature)}(s3)")
+        else:
+            e.inst("li", "t0", "0")
+        e.inst("sb", "t0", f"{dst_offset}(s6)")
+
+
+def emit_fill_fc_scratch_linear_inline(e: Rv32Emitter, valid_inputs: int) -> None:
+    for feature in range(FC_CHUNK):
+        dst_offset = fc_scratch_offset(feature)
+        if feature < valid_inputs:
+            e.inst("lbu", "t0", f"{feature}(s4)")
+        else:
+            e.inst("li", "t0", "0")
+        e.inst("sb", "t0", f"{dst_offset}(s6)")
+
+
+def emit_conv2_postprocess_all_unrolled(e: Rv32Emitter) -> None:
+    for row in range(CONV2_H):
+        for col in range(CONV2_W):
+            idx = row * CONV2_W + col
+            accum_offset = idx * 4
+            out_offset = row * CONV2_ROW_STRIDE + col
+            zero_label = f"conv2_post_zero_{idx}"
+            store_label = f"conv2_post_store_{idx}"
+            e.inst("lw", "t4", f"{accum_offset}(s7)")
+            e.inst("blt", "t4", "zero", zero_label)
+            e.inst("andi", "t4", "t4", "255")
+            e.inst("j", store_label)
+            e.label(zero_label)
+            e.inst("li", "t4", "0")
+            e.label(store_label)
+            e.inst("sb", "t4", f"{out_offset}(s3)")
+
+
+def emit_fc1_postprocess_unrolled(e: Rv32Emitter) -> None:
+    for neuron in range(FC1_OUT):
+        zero_label = f"fc1_store_zero_{neuron}"
+        store_label = f"fc1_store_value_{neuron}"
+        e.inst("lw", "t2", f"{neuron * 4}(s7)")
+        e.inst("blt", "t2", "zero", zero_label)
+        e.inst("andi", "t0", "t2", "255")
+        e.inst("j", store_label)
+        e.label(zero_label)
+        e.inst("li", "t0", "0")
+        e.label(store_label)
+        e.inst("sb", "t0", f"{neuron}(s4)")
+
+
+def emit_conv1_rows_unrolled(e: Rv32Emitter) -> None:
+    for row in range(CONV1_H):
+        if row < CONV1_H - 1:
+            e.inst("addi", "a0", "s1", str((row + 3) * ROW_STRIDE), comment="prefetch next input row while CONV runs")
+            e.inst("sw", "a0", f"{OFF_SRC_ADDR}(s0)", comment="SET_DMA_ADDR")
+        emit_accel_command(e, CMD_START_CONV, "START_CONV")
+        emit_wait_done_inline(e, f"conv1_wait_done_r{row}")
+        emit_store_packed_13_inline(e, base_reg="s8", row_offset=row * CONV1_ROW_STRIDE)
+        if row < CONV1_H - 1:
+            emit_accel_command(e, CMD_SHIFT_LINES, "SHIFT_LINES")
+
+
+def emit_conv2_rows_unrolled(e: Rv32Emitter) -> None:
+    for row in range(CONV2_H):
+        if row < CONV2_H - 1:
+            e.inst("addi", "a0", "s11", str((row + 3) * CONV1_ROW_STRIDE), comment="prefetch next channel row while CONV runs")
+            e.inst("sw", "a0", f"{OFF_SRC_ADDR}(s0)", comment="SET_DMA_ADDR")
+        emit_accel_command(e, CMD_START_CONV, "START_CONV")
+        e.inst("addi", "a0", "s7", str(row * CONV2_W * 4))
+        emit_conv2_accumulate_raw_11_unrolled(e)
+        emit_wait_done_inline(e, f"conv2_wait_done_r{row}")
+        if row < CONV2_H - 1:
+            emit_accel_command(e, CMD_SHIFT_LINES, "SHIFT_LINES")
 
 
 def emit_header(e: Rv32Emitter, sample_index: int | None = None, expected_output: int | None = None) -> None:
@@ -136,6 +229,9 @@ def emit_run_conv1(e: Rv32Emitter) -> None:
     e.inst("mv", "a0", "s1", comment="prime line buffer with input rows 0..2")
     e.inst("li", "a1", str(ROW_STRIDE))
     e.call("acc_load_three_rows")
+    e.inst("li", "t0", str(CONV1_CH_BYTES))
+    e.inst("mul", "t1", "s9", "t0")
+    e.inst("add", "s8", "s2", "t1", comment="current Conv1 output channel base")
     e.inst("li", "s10", "0", comment="output row")
     e.label("conv1_row_loop")
     e.inst("li", "t0", str(CONV1_H))
@@ -149,11 +245,8 @@ def emit_run_conv1(e: Rv32Emitter) -> None:
     e.label("conv1_no_prefetch")
     emit_accel_command(e, CMD_START_CONV, "START_CONV")
     emit_wait_done_inline(e, "conv1_wait_done")
-    e.inst("li", "t0", str(CONV1_CH_BYTES))
-    e.inst("mul", "t1", "s9", "t0")
-    e.inst("slli", "t2", "s10", "4")
-    e.inst("add", "t1", "t1", "t2")
-    e.inst("add", "a0", "s2", "t1")
+    e.inst("slli", "t0", "s10", "4")
+    e.inst("add", "a0", "s8", "t0")
     emit_store_packed_13_inline(e)
     e.inst("li", "t0", str(CONV1_H - 1))
     e.inst("bge", "s10", "t0", "conv1_skip_shift")
@@ -193,30 +286,7 @@ def emit_run_conv2(e: Rv32Emitter) -> None:
     e.inst("mv", "a0", "s11", comment="prime line buffer with channel rows 0..2")
     e.inst("li", "a1", str(CONV1_ROW_STRIDE))
     e.call("acc_load_three_rows")
-    e.inst("li", "s9", "0", comment="conv2 output row")
-    e.label("conv2_row_loop")
-    e.inst("li", "t0", str(CONV2_H))
-    e.inst("bge", "s9", "t0", "conv2_next_channel")
-    e.inst("li", "t0", str(CONV2_H - 1))
-    e.inst("bge", "s9", "t0", "conv2_no_prefetch")
-    e.inst("addi", "t0", "s9", "3", comment="prefetch next channel row while CONV runs")
-    e.inst("slli", "t0", "t0", "4")
-    e.inst("add", "a0", "s11", "t0")
-    e.inst("sw", "a0", f"{OFF_SRC_ADDR}(s0)", comment="SET_DMA_ADDR")
-    e.label("conv2_no_prefetch")
-    emit_accel_command(e, CMD_START_CONV, "START_CONV")
-    e.inst("li", "t0", str(CONV2_W * 4))
-    e.inst("mul", "t1", "s9", "t0")
-    e.inst("add", "a0", "s7", "t1")
-    emit_conv2_accumulate_raw_11_unrolled(e)
-    emit_wait_done_inline(e, "conv2_wait_done")
-    e.inst("li", "t0", str(CONV2_H - 1))
-    e.inst("bge", "s9", "t0", "conv2_skip_shift")
-    emit_accel_command(e, CMD_SHIFT_LINES, "SHIFT_LINES")
-    e.label("conv2_skip_shift")
-    e.inst("addi", "s9", "s9", "1")
-    e.inst("j", "conv2_row_loop")
-    e.label("conv2_next_channel")
+    emit_conv2_rows_unrolled(e)
     e.inst("addi", "s10", "s10", "1")
     e.inst("j", "conv2_channel_loop")
     e.label("conv2_postprocess_all")
@@ -246,58 +316,23 @@ def emit_run_fc1(e: Rv32Emitter) -> None:
     e.inst("mv", "a0", "s7", comment="reuse accumulator scratch for 10 FC1 sums")
     e.inst("li", "a1", str(FC1_OUT))
     e.call("zero_words")
-    e.inst("li", "s10", "0", comment="FC1 chunk")
-    e.label("fc1_chunk_loop")
-    e.inst("li", "t0", str(FC1_CHUNKS))
-    e.inst("bge", "s10", "t0", "fc1_postprocess")
-    e.inst("li", "t0", str(FC_CHUNK))
-    e.inst("mul", "a0", "s10", "t0", comment="chunk start feature")
-    e.call("fill_fc_scratch_conv2")
-    e.inst("mv", "a0", "s6")
-    e.inst("li", "a1", str(ROW_STRIDE))
-    e.call("acc_load_three_rows")
-    e.inst("li", "s9", "0", comment="FC1 output neuron")
-    e.label("fc1_neuron_loop")
-    e.inst("li", "t0", str(FC1_OUT))
-    e.inst("bge", "s9", "t0", "fc1_next_chunk")
-    e.la("a0", "fc1_w_packed")
-    e.inst("slli", "t0", "s9", "2", comment="neuron * 4 chunks")
-    e.inst("add", "t0", "t0", "s10")
-    e.inst("li", "t1", "48", comment="12 words per FC invocation")
-    e.inst("mul", "t0", "t0", "t1")
-    e.inst("add", "a0", "a0", "t0")
-    e.call("acc_write_fc_weights")
-    emit_accel_command(e, CMD_START_FC, "START_FC")
-    emit_wait_done_inline(e, "fc1_wait_done")
-    e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)", comment="FC raw signed int32")
-    e.inst("slli", "t1", "s9", "2")
-    e.inst("add", "t1", "s7", "t1")
-    e.inst("lw", "t2", "0(t1)")
-    e.inst("add", "t2", "t2", "t0")
-    e.inst("sw", "t2", "0(t1)")
-    e.inst("addi", "s9", "s9", "1")
-    e.inst("j", "fc1_neuron_loop")
-    e.label("fc1_next_chunk")
-    e.inst("addi", "s10", "s10", "1")
-    e.inst("j", "fc1_chunk_loop")
-    e.label("fc1_postprocess")
-    e.inst("li", "s9", "0", comment="postprocess FC1 sums")
-    e.label("fc1_postprocess_loop")
-    e.inst("li", "t0", str(FC1_OUT))
-    e.inst("bge", "s9", "t0", "fc1_done")
-    e.inst("slli", "t0", "s9", "2")
-    e.inst("add", "t1", "s7", "t0")
-    e.inst("lw", "t2", "0(t1)")
-    e.inst("blt", "t2", "zero", "fc1_store_zero")
-    e.inst("andi", "t0", "t2", "255")
-    e.inst("j", "fc1_store_value")
-    e.label("fc1_store_zero")
-    e.inst("li", "t0", "0")
-    e.label("fc1_store_value")
-    e.inst("add", "t1", "s4", "s9")
-    e.inst("sb", "t0", "0(t1)")
-    e.inst("addi", "s9", "s9", "1")
-    e.inst("j", "fc1_postprocess_loop")
+    e.la("s8", "fc1_w_packed")
+    for chunk in range(FC1_CHUNKS):
+        emit_fill_fc_scratch_conv2_chunk_inline(e, chunk)
+        e.inst("mv", "a0", "s6")
+        e.inst("li", "a1", str(ROW_STRIDE))
+        e.call("acc_load_three_rows")
+        for neuron in range(FC1_OUT):
+            weight_offset = (neuron * FC1_CHUNKS + chunk) * 48
+            e.inst("addi", "a0", "s8", str(weight_offset), comment=f"FC1 neuron {neuron}, chunk {chunk} weights")
+            e.call("acc_write_fc_weights")
+            emit_accel_command(e, CMD_START_FC, "START_FC")
+            emit_wait_done_inline(e, f"fc1_wait_done_c{chunk}_n{neuron}")
+            e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)", comment="FC raw signed int32")
+            e.inst("lw", "t2", f"{neuron * 4}(s7)")
+            e.inst("add", "t2", "t2", "t0")
+            e.inst("sw", "t2", f"{neuron * 4}(s7)")
+    emit_fc1_postprocess_unrolled(e)
     e.label("fc1_done")
     e.inst("lw", "ra", "12(sp)")
     e.inst("addi", "sp", "sp", "16")
@@ -309,9 +344,7 @@ def emit_run_fc2(e: Rv32Emitter) -> None:
     e.label("run_fc2")
     e.inst("addi", "sp", "sp", "-16")
     e.inst("sw", "ra", "12(sp)")
-    e.inst("mv", "a0", "s4")
-    e.inst("li", "a1", str(FC1_OUT))
-    e.call("fill_fc_scratch_linear")
+    emit_fill_fc_scratch_linear_inline(e, FC1_OUT)
     e.la("a0", "fc2_w_packed")
     e.call("acc_write_fc_weights")
     e.inst("mv", "a0", "s6")
@@ -337,38 +370,6 @@ def emit_cpu_runtime_helpers(e: Rv32Emitter) -> None:
     """Emit CPU helper labels that are specific to this CNN schedule."""
 
     e.comment("CNN schedule helper subroutines.")
-    e.label("acc_store_packed_13")
-    e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)")
-    e.inst("sw", "t0", "0(a0)")
-    e.inst("lw", "t0", f"{OFF_RES_PACK_1}(s0)")
-    e.inst("sw", "t0", "4(a0)")
-    e.inst("lw", "t0", f"{OFF_RES_PACK_2}(s0)")
-    e.inst("sw", "t0", "8(a0)")
-    e.inst("lw", "t0", f"{OFF_RES_PACK_3}(s0)")
-    e.inst("sb", "t0", "12(a0)")
-    e.ret()
-    e.emit()
-
-    e.label("acc_accumulate_raw_11")
-    e.inst("li", "t0", "0")
-    e.label("acc_accumulate_raw_11_loop")
-    e.inst("li", "t1", "11")
-    e.inst("bge", "t0", "t1", "acc_accumulate_raw_11_done")
-    e.inst("slli", "t2", "t0", "2")
-    e.inst("add", "t3", "a0", "t2")
-    e.inst("lw", "t4", "0(t3)")
-    e.inst("li", "t5", str(OFF_RAW_BASE))
-    e.inst("add", "t5", "t5", "t2")
-    e.inst("add", "t6", "s0", "t5")
-    e.inst("lw", "t5", "0(t6)")
-    e.inst("add", "t4", "t4", "t5")
-    e.inst("sw", "t4", "0(t3)")
-    e.inst("addi", "t0", "t0", "1")
-    e.inst("j", "acc_accumulate_raw_11_loop")
-    e.label("acc_accumulate_raw_11_done")
-    e.ret()
-    e.emit()
-
     e.label("zero_words")
     e.inst("beq", "a1", "zero", "zero_words_done")
     e.label("zero_words_loop")
@@ -402,58 +403,6 @@ def emit_cpu_runtime_helpers(e: Rv32Emitter) -> None:
     e.ret()
     e.emit()
 
-    e.label("fill_fc_scratch_conv2")
-    e.inst("li", "t0", "0")
-    e.la("t1", "fc_scratch_offsets")
-    e.la("t2", "conv2_flat_offsets")
-    e.label("fill_fc_scratch_conv2_loop")
-    e.inst("li", "t3", "36")
-    e.inst("bge", "t0", "t3", "fill_fc_scratch_conv2_done")
-    e.inst("add", "t4", "a0", "t0", comment="global feature index")
-    e.inst("lbu", "t5", "0(t1)", comment="scratch byte offset")
-    e.inst("add", "t6", "s6", "t5")
-    e.inst("li", "t3", "132")
-    e.inst("bge", "t4", "t3", "fill_fc_scratch_conv2_zero")
-    e.inst("slli", "t5", "t4", "1")
-    e.inst("add", "t5", "t2", "t5")
-    e.inst("lhu", "t5", "0(t5)")
-    e.inst("add", "t5", "s3", "t5")
-    e.inst("lbu", "t5", "0(t5)")
-    e.inst("j", "fill_fc_scratch_conv2_store")
-    e.label("fill_fc_scratch_conv2_zero")
-    e.inst("li", "t5", "0")
-    e.label("fill_fc_scratch_conv2_store")
-    e.inst("sb", "t5", "0(t6)")
-    e.inst("addi", "t0", "t0", "1")
-    e.inst("addi", "t1", "t1", "1")
-    e.inst("j", "fill_fc_scratch_conv2_loop")
-    e.label("fill_fc_scratch_conv2_done")
-    e.ret()
-    e.emit()
-
-    e.label("fill_fc_scratch_linear")
-    e.inst("li", "t0", "0")
-    e.la("t1", "fc_scratch_offsets")
-    e.label("fill_fc_scratch_linear_loop")
-    e.inst("li", "t2", "36")
-    e.inst("bge", "t0", "t2", "fill_fc_scratch_linear_done")
-    e.inst("lbu", "t3", "0(t1)")
-    e.inst("add", "t4", "s6", "t3")
-    e.inst("bge", "t0", "a1", "fill_fc_scratch_linear_zero")
-    e.inst("add", "t5", "a0", "t0")
-    e.inst("lbu", "t5", "0(t5)")
-    e.inst("j", "fill_fc_scratch_linear_store")
-    e.label("fill_fc_scratch_linear_zero")
-    e.inst("li", "t5", "0")
-    e.label("fill_fc_scratch_linear_store")
-    e.inst("sb", "t5", "0(t4)")
-    e.inst("addi", "t0", "t0", "1")
-    e.inst("addi", "t1", "t1", "1")
-    e.inst("j", "fill_fc_scratch_linear_loop")
-    e.label("fill_fc_scratch_linear_done")
-    e.ret()
-    e.emit()
-
 
 def emit_dcache_init(e: Rv32Emitter, rodata: dict[str, list[int]]) -> None:
     e.emit('    .section .dcache_init,"aw"')
@@ -478,14 +427,6 @@ def emit_dcache_init(e: Rv32Emitter, rodata: dict[str, list[int]]) -> None:
     e.align(2)
     e.label("fc2_w_packed")
     e.word_values(rodata["fc2_w_packed"])
-    e.emit()
-    e.align(1)
-    e.label("fc_scratch_offsets")
-    e.byte_values(rodata["fc_scratch_offsets"])
-    e.emit()
-    e.align(1)
-    e.label("conv2_flat_offsets")
-    e.half_values(rodata["conv2_flat_offsets"])
 
 
 def emit_assembly(

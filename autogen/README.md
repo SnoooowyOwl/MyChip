@@ -144,6 +144,8 @@ The generated assembly assumes:
 - generated hot loops do not issue per-invocation `RESET_PSUMS`; `START_CONV`
   overwrites the CONV result registers before they are consumed, and `START_FC`
   clears the FC accumulator in the current RTL.
+- the verifier checks both individual 8 KiB SRAM image limits and the combined
+  16 KiB initialized I/D SRAM budget.
 
 D-cache layout:
 
@@ -156,7 +158,7 @@ D-cache layout:
 | `OUTPUT_ADDR` from `cnn_config.py` | final output byte |
 | `0x90000b40` | FC scratch rows |
 | `0x90000b80` | full 12x11 int32 Conv2 accumulation scratch |
-| `0x90000e00` | preloaded weights and lookup tables |
+| `0x90000e00` | preloaded packed weights |
 
 The default `OUTPUT_ADDR` is `0x90000b20`. You may change it in
 `cnn_config.py`, but it must remain inside the 8 KiB D-cache window and must not
@@ -186,11 +188,37 @@ Accelerator-specific runtime helper labels are emitted by
 `START_CONV`, `START_FC`, `SHIFT_LINES`, status polling, and Conv1 packed
 stores to avoid repeated `call`/`ret` overhead.
 
-CNN-specific CPU helper labels such as `zero_words`, `postprocess_accum_11`,
-`fill_fc_scratch_conv2`, and `fill_fc_scratch_linear` live in
-`cnn_top_emit.py`, not in the accelerator API layer. Conv2 raw accumulation is
-unrolled in the Conv2 hot loop and overlaps with the current CONV computation;
-the generated code still polls `STATUS_DONE` before `SHIFT_LINES`.
+CNN-specific CPU helper labels such as `zero_words` and
+`postprocess_accum_11` live in `cnn_top_emit.py`, not in the accelerator API
+layer. Conv2 row scheduling and raw accumulation are unrolled in the Conv2 hot
+loop and overlap with the current CONV computation; the generated code still
+polls `STATUS_DONE` before `SHIFT_LINES`. FC1/FC2 scratch packing is emitted as
+direct fixed-offset loads and stores instead of lookup-table loops.
+
+## Current Optimization State
+
+The current generated code keeps the RTL fixed and uses only software/codegen
+changes for speed:
+
+- explicit DMA waits are `10` nops;
+- Conv1 and Conv2 prefetch the next row before the current CONV and shift the
+  prefetched line only after result handling and `STATUS_DONE`;
+- hot accelerator commands, status polling, Conv1 packed stores, and Conv2 raw
+  accumulation are emitted inline;
+- per-invocation `RESET_PSUMS` commands are omitted because the current RTL
+  overwrites CONV results on `START_CONV` and clears FC accumulation on
+  `START_FC`;
+- Conv2 uses a fixed 12-row unrolled schedule and overlaps CPU accumulation of
+  raw results with the active CONV invocation;
+- FC1 is emitted chunk-major: each 36-byte input chunk is loaded once and reused
+  across all 10 output neurons;
+- FC1 chunk/neuron execution and FC1 postprocessing are unrolled;
+- FC1/FC2 scratch rows are built with fixed-offset loads/stores, so scratch
+  offset lookup tables are not emitted into D-cache init data;
+- generated code is RV32IM only, with RVC/compressed instructions disabled;
+- verification checks both separate 8 KiB I-cache/D-cache images and the
+  combined 16 KiB initialized-memory budget. The current sample 0 link is about
+  `.text = 0x1d5c`, `.dcache_init = 0x16a0`, combined `0x33fc`.
 
 ## ReLU / Postprocessing Rule
 

@@ -136,6 +136,8 @@ For each sample `n`:
       state machine is done before mutating the line buffer.
    8. Issue `SHIFT_LINES` after result handling to roll in the prefetched row,
       except on the last output row.
+   The generated Conv2 row body is unrolled because the fixed 12-row shape is
+   known and the code still fits within the SRAM budget.
 3. After all 10 channels are accumulated, apply final Conv2 postprocessing in
    software:
    - if accumulator is negative, output `0`;
@@ -163,8 +165,9 @@ For each sample `n`:
    - chunk 2: features `72..107`
    - chunk 3: features `108..131`, padded with 12 zeros
 3. For each chunk:
-   1. Arrange the 36 input bytes as three 16-byte DMA rows, using only columns
-      `0..11` and padding the remaining row bytes.
+   1. Arrange the 36 input bytes as three 16-byte DMA rows with generated
+      fixed-offset loads/stores, using only columns `0..11` and padding the
+      remaining row bytes.
    2. Load the three input rows into the accelerator line buffer once.
    3. For each FC1 output neuron `o = 0..9`:
       1. Write the corresponding 36 signed weights into weight groups 0..3.
@@ -218,6 +221,8 @@ Software must handle:
 - Reusing FC1 chunk input loads across all 10 output neurons.
 - Overlapping Conv2 raw-result CPU accumulation with the current CONV
   invocation while still waiting for `STATUS_DONE` before `SHIFT_LINES`.
+- Spending instruction memory on fixed-shape unrolling while keeping the
+  initialized I/D image under the combined 16 KiB SRAM budget.
 - CPU fallback for any operation that does not fit the accelerator's fixed
   CONV or FC modes.
 
