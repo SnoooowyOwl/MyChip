@@ -1,0 +1,10 @@
+sample_index=1
+output_addr=0x90000B20
+dcache_word_addr=0x90000B20
+dcache_word_index=712
+dcache_hex_line_1_based=713
+byte_lane=0
+expected_output_decimal=237
+expected_output_byte_hex=0xED
+expected_word_if_other_bytes_zero=0x000000ED
+note=the program stores one byte with sb; the expected word assumes neighboring bytes are zero

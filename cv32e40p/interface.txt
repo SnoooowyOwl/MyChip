@@ -1,0 +1,160 @@
+# Convolution Accelerator Interface
+
+This accelerator is memory-mapped at `ACCELERATOR_BASE = 0x70000000` in
+`fpga/rtl/src/cv32e40p_xilinx.sv`.
+
+All offsets below are byte offsets from `ACCELERATOR_BASE`. Software should use
+32-bit aligned word accesses.
+
+Example software has been moved to:
+
+- `cv32e40p/examples/testcode/conv_mode.S`
+- `cv32e40p/examples/testcode/fc_mode.S`
+
+## Implemented Register Map
+
+Only the offsets listed in this table are implemented as software-visible
+registers.
+
+| Offset | Access | Name | Description |
+| --- | --- | --- | --- |
+| `0x000` | W | `CTRL` | Write command words listed below. |
+| `0x000` | R | `STATUS` | Returns `0x00000001` when the current computation is done, otherwise `0x00000000`. |
+| `0x004` | W | `SRC_ADDR` | Source memory address for the accelerator AXI read master. Writing this register starts one fixed DMA read burst. |
+| `0x034` | W | `W0_0_3` | Weight group 0, weights 0..3. |
+| `0x038` | W | `W0_4_7` | Weight group 0, weights 4..7. |
+| `0x03c` | W | `W0_8` | Weight group 0, weight 8 in bits `[7:0]`; upper bits ignored. |
+| `0x040` | W | `W1_0_3` | Weight group 1, weights 0..3. |
+| `0x044` | W | `W1_4_7` | Weight group 1, weights 4..7. |
+| `0x048` | W | `W1_8` | Weight group 1, weight 8 in bits `[7:0]`; upper bits ignored. |
+| `0x04c` | W | `W2_0_3` | Weight group 2, weights 0..3. |
+| `0x050` | W | `W2_4_7` | Weight group 2, weights 4..7. |
+| `0x054` | W | `W2_8` | Weight group 2, weight 8 in bits `[7:0]`; upper bits ignored. |
+| `0x058` | W | `W3_0_3` | Weight group 3, weights 0..3. |
+| `0x05c` | W | `W3_4_7` | Weight group 3, weights 4..7. |
+| `0x060` | W | `W3_8` | Weight group 3, weight 8 in bits `[7:0]`; upper bits ignored. |
+| `0x064` | R | `RESULT_PACK_0` | Conv mode: results 0..3 packed into bytes. FC mode: 32-bit FC result. |
+| `0x068` | R | `RESULT_PACK_1` | Conv mode: results 4..7 packed into bytes. |
+| `0x06c` | R | `RESULT_PACK_2` | Conv mode: results 8..11 packed into bytes. |
+| `0x070` | R | `RESULT_PACK_3` | Conv mode: results 12..13 packed into bytes; upper 16 bits are zero. |
+| `0x078` | R | `RAW_RESULT_0` | Conv mode raw signed 32-bit sum for output 0. |
+| `0x07c` | R | `RAW_RESULT_1` | Conv mode raw signed 32-bit sum for output 1. |
+| `0x080` | R | `RAW_RESULT_2` | Conv mode raw signed 32-bit sum for output 2. |
+| `0x084` | R | `RAW_RESULT_3` | Conv mode raw signed 32-bit sum for output 3. |
+| `0x088` | R | `RAW_RESULT_4` | Conv mode raw signed 32-bit sum for output 4. |
+| `0x08c` | R | `RAW_RESULT_5` | Conv mode raw signed 32-bit sum for output 5. |
+| `0x090` | R | `RAW_RESULT_6` | Conv mode raw signed 32-bit sum for output 6. |
+| `0x094` | R | `RAW_RESULT_7` | Conv mode raw signed 32-bit sum for output 7. |
+| `0x098` | R | `RAW_RESULT_8` | Conv mode raw signed 32-bit sum for output 8. |
+| `0x09c` | R | `RAW_RESULT_9` | Conv mode raw signed 32-bit sum for output 9. |
+| `0x0a0` | R | `RAW_RESULT_10` | Conv mode raw signed 32-bit sum for output 10. |
+| `0x0a4` | R | `RAW_RESULT_11` | Conv mode raw signed 32-bit sum for output 11. |
+| `0x0a8` | R | `RAW_RESULT_12` | Conv mode raw signed 32-bit sum for output 12. |
+| `0x0ac` | R | `RAW_RESULT_13` | Conv mode raw signed 32-bit sum for output 13. |
+
+Reads from offsets not listed above return `0x00000000`.
+
+## Control Commands
+
+Write these values to offset `0x000`.
+
+| Value | Name | RTL effect |
+| --- | --- | --- |
+| `0x0000ffff` | `START_CONV` | Starts convolution mode. The accelerator computes 14 sliding 3x3 outputs from the current 3-line buffer using only weight group 0. `STATUS` becomes busy until all 14 outputs are written. |
+| `0x000fffff` | `START_FC` | Starts fully-connected mode. The accelerator computes one signed 32-bit result using the current 3-line buffer and all four weight groups. `STATUS` becomes busy until the result is written. |
+| `0x0fffffff` | `RESET_PSUMS` | Clears packed conv results, raw conv sums, `fc_result`, and `fc_accum`. It also returns the compute state to idle and sets `STATUS` busy. It does not clear line buffers, prefetch buffer, or weights. |
+| `0xffffffff` | `GLOBAL_RESET` | Clears line buffers, prefetch buffer, packed conv results, raw conv sums, `fc_result`, and `fc_accum`. It stops the compute and DMA state machines and sets `STATUS` busy. It does not clear weights. Hardware reset clears weights. |
+| `0x00000200` | `SHIFT_LINES` | Shifts `line_buffer[1]` into `line_buffer[0]`, `line_buffer[2]` into `line_buffer[1]`, and the current `prefetch_buffer` into `line_buffer[2]`. |
+
+## DMA Source Reads
+
+Writing offset `0x004` starts one AXI read burst from the written source address.
+
+Current RTL behavior:
+
+- `m_axi_araddr` is the written `SRC_ADDR`.
+- `m_axi_arlen` is fixed to `3`, so the burst always reads 4 beats.
+- `m_axi_arsize` is fixed to `3'b010`, so each beat is 4 bytes.
+- `m_axi_arburst` is fixed to incrementing burst.
+- Total bytes read per `SRC_ADDR` write: 16 bytes.
+- The AXI read response code is ignored by the accelerator.
+- Data is written into `prefetch_buffer[0..15]` in little-endian byte order:
+  - first beat bits `[7:0]` go to `prefetch_buffer[0]`;
+  - first beat bits `[15:8]` go to `prefetch_buffer[1]`;
+  - first beat bits `[23:16]` go to `prefetch_buffer[2]`;
+  - first beat bits `[31:24]` go to `prefetch_buffer[3]`;
+  - later beats fill the following bytes the same way.
+
+There is no memory-mapped DMA-done status bit. Software must wait long enough
+for the 4-word read to complete before issuing `SHIFT_LINES` or starting a
+compute that depends on the fetched data.
+
+## Weight Format
+
+All weights are signed 8-bit values.
+
+For each `Wn_0_3` register:
+
+- bits `[7:0]` are weight 0;
+- bits `[15:8]` are weight 1;
+- bits `[23:16]` are weight 2;
+- bits `[31:24]` are weight 3.
+
+For each `Wn_4_7` register:
+
+- bits `[7:0]` are weight 4;
+- bits `[15:8]` are weight 5;
+- bits `[23:16]` are weight 6;
+- bits `[31:24]` are weight 7.
+
+For each `Wn_8` register, only bits `[7:0]` are used as weight 8.
+
+Mode-specific use:
+
+- Convolution mode uses only weight group 0 for all 14 outputs.
+- FC mode uses weight groups 0, 1, 2, and 3 across four compute cycles.
+
+## Input Window Semantics
+
+The accelerator stores three input rows, each 16 bytes wide:
+
+- `line_buffer[0][0..15]`
+- `line_buffer[1][0..15]`
+- `line_buffer[2][0..15]`
+
+`SHIFT_LINES` loads the last DMA burst into row 2 and shifts older rows upward.
+
+Convolution mode computes 14 adjacent 3x3 windows:
+
+- output 0 uses columns 0, 1, 2 from each row;
+- output 1 uses columns 1, 2, 3 from each row;
+- ...
+- output 13 uses columns 13, 14, 15 from each row.
+
+FC mode treats the three rows as four adjacent 3-column tiles:
+
+- cycle 0 uses weight group 0 and columns 0..2;
+- cycle 1 uses weight group 1 and columns 3..5;
+- cycle 2 uses weight group 2 and columns 6..8;
+- cycle 3 uses weight group 3 and columns 9..11.
+
+## Output Format
+
+The compute core multiplies unsigned 8-bit input data by signed 8-bit weights.
+The raw signed 32-bit sum is stored in `RAW_RESULT_*` for convolution mode.
+
+The packed convolution byte result is:
+
+- `0` if the raw sum is negative;
+- otherwise the low 8 bits of the raw sum.
+
+Packed convolution registers:
+
+| Offset | Bits `[7:0]` | Bits `[15:8]` | Bits `[23:16]` | Bits `[31:24]` |
+| --- | --- | --- | --- | --- |
+| `0x064` | result 0 | result 1 | result 2 | result 3 |
+| `0x068` | result 4 | result 5 | result 6 | result 7 |
+| `0x06c` | result 8 | result 9 | result 10 | result 11 |
+| `0x070` | result 12 | result 13 | `0x00` | `0x00` |
+
+In FC mode, read offset `0x064` to get the signed 32-bit `fc_result`.
