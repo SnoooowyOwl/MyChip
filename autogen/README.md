@@ -141,6 +141,9 @@ The generated assembly assumes:
 - Conv1 and Conv2 prefetch the next activation row during the current CONV
   computation, then issue `SHIFT_LINES` after the computation and result
   handling have completed.
+- generated hot loops do not issue per-invocation `RESET_PSUMS`; `START_CONV`
+  overwrites the CONV result registers before they are consumed, and `START_FC`
+  clears the FC accumulator in the current RTL.
 
 D-cache layout:
 
@@ -179,13 +182,15 @@ guard. `verify_cnn.py` checks this.
 
 Accelerator-specific runtime helper labels are emitted by
 `AcceleratorAPI.emit_runtime_helpers`, including `acc_load_three_rows`,
-`acc_write_conv_w0`, and `acc_write_fc_weights`.
+`acc_write_conv_w0`, and `acc_write_fc_weights`. Hot control paths inline
+`START_CONV`, `START_FC`, `SHIFT_LINES`, status polling, and Conv1 packed
+stores to avoid repeated `call`/`ret` overhead.
 
 CNN-specific CPU helper labels such as `zero_words`, `postprocess_accum_11`,
 `fill_fc_scratch_conv2`, and `fill_fc_scratch_linear` live in
-`cnn_top_emit.py`, not in the accelerator API layer. The CNN-width-specific
-accelerator readback helpers `acc_store_packed_13` and
-`acc_accumulate_raw_11` also live with the top schedule.
+`cnn_top_emit.py`, not in the accelerator API layer. Conv2 raw accumulation is
+unrolled in the Conv2 hot loop and overlaps with the current CONV computation;
+the generated code still polls `STATUS_DONE` before `SHIFT_LINES`.
 
 ## ReLU / Postprocessing Rule
 

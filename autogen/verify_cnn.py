@@ -57,6 +57,16 @@ def static_check_assembly(asm: str, rodata: dict[str, list[int]]) -> None:
         raise AssertionError("generated assembly appears to access nonexistent accelerator BASE+8")
     if ".section .rodata" in asm:
         raise AssertionError("generated assembly still places initialized data in I-cache .rodata")
+    for forbidden in (
+        "call acc_reset_psums",
+        "call acc_wait_done",
+        "call acc_store_packed_13",
+        "call acc_accumulate_raw_11",
+    ):
+        if forbidden in asm:
+            raise AssertionError(f"generated assembly still contains hot helper call: {forbidden}")
+    if "fc1_chunk_loop:" not in asm or "fc1_neuron_loop:" not in asm:
+        raise AssertionError("generated assembly is missing chunk-major FC1 loop labels")
 
     for match in re.finditer(r"\b(\d+)\(s0\)", asm):
         offset = int(match.group(1))

@@ -61,18 +61,29 @@ conv1_row_loop:
     add a0, s1, t0
     sw a0, 4(s0)                         # SET_DMA_ADDR
 conv1_no_prefetch:
-    call acc_reset_psums
-    call acc_start_conv
-    call acc_wait_done
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
+conv1_wait_done:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv1_wait_done
     li t0, 224
     mul t1, s9, t0
     slli t2, s10, 4
     add t1, t1, t2
     add a0, s2, t1
-    call acc_store_packed_13
+    lw t0, 100(s0)
+    sw t0, 0(a0)
+    lw t0, 104(s0)
+    sw t0, 4(a0)
+    lw t0, 108(s0)
+    sw t0, 8(a0)
+    lw t0, 112(s0)
+    sb t0, 12(a0)
     li t0, 13
     bge s10, t0, conv1_skip_shift
-    call acc_shift_lines
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
 conv1_skip_shift:
     addi s10, s10, 1
     j conv1_row_loop
@@ -116,16 +127,63 @@ conv2_row_loop:
     add a0, s11, t0
     sw a0, 4(s0)                         # SET_DMA_ADDR
 conv2_no_prefetch:
-    call acc_reset_psums
-    call acc_start_conv
-    call acc_wait_done
+    li t0, 0x0000ffff                    # START_CONV
+    sw t0, 0(s0)
     li t0, 44
     mul t1, s9, t0
     add a0, s7, t1
-    call acc_accumulate_raw_11
+    lw t4, 0(a0)
+    lw t5, 120(s0)
+    add t4, t4, t5
+    sw t4, 0(a0)
+    lw t4, 4(a0)
+    lw t5, 124(s0)
+    add t4, t4, t5
+    sw t4, 4(a0)
+    lw t4, 8(a0)
+    lw t5, 128(s0)
+    add t4, t4, t5
+    sw t4, 8(a0)
+    lw t4, 12(a0)
+    lw t5, 132(s0)
+    add t4, t4, t5
+    sw t4, 12(a0)
+    lw t4, 16(a0)
+    lw t5, 136(s0)
+    add t4, t4, t5
+    sw t4, 16(a0)
+    lw t4, 20(a0)
+    lw t5, 140(s0)
+    add t4, t4, t5
+    sw t4, 20(a0)
+    lw t4, 24(a0)
+    lw t5, 144(s0)
+    add t4, t4, t5
+    sw t4, 24(a0)
+    lw t4, 28(a0)
+    lw t5, 148(s0)
+    add t4, t4, t5
+    sw t4, 28(a0)
+    lw t4, 32(a0)
+    lw t5, 152(s0)
+    add t4, t4, t5
+    sw t4, 32(a0)
+    lw t4, 36(a0)
+    lw t5, 156(s0)
+    add t4, t4, t5
+    sw t4, 36(a0)
+    lw t4, 40(a0)
+    lw t5, 160(s0)
+    add t4, t4, t5
+    sw t4, 40(a0)
+conv2_wait_done:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, conv2_wait_done
     li t0, 11
     bge s9, t0, conv2_skip_shift
-    call acc_shift_lines
+    li t0, 0x00000200                    # SHIFT_LINES
+    sw t0, 0(s0)
 conv2_skip_shift:
     addi s9, s9, 1
     j conv2_row_loop
@@ -153,18 +211,23 @@ conv2_done:
 run_fc1:
     addi sp, sp, -16
     sw ra, 12(sp)
-    li s9, 0                             # FC1 output neuron
-fc1_neuron_loop:
-    li t0, 10
-    bge s9, t0, fc1_done
-    li s11, 0                            # raw int32 neuron accumulator
+    mv a0, s7                            # reuse accumulator scratch for 10 FC1 sums
+    li a1, 10
+    call zero_words
     li s10, 0                            # FC1 chunk
 fc1_chunk_loop:
     li t0, 4
-    bge s10, t0, fc1_finish_neuron
+    bge s10, t0, fc1_postprocess
     li t0, 36
     mul a0, s10, t0                      # chunk start feature
     call fill_fc_scratch_conv2
+    mv a0, s6
+    li a1, 16
+    call acc_load_three_rows
+    li s9, 0                             # FC1 output neuron
+fc1_neuron_loop:
+    li t0, 10
+    bge s9, t0, fc1_next_chunk
     la a0, fc1_w_packed
     slli t0, s9, 2                       # neuron * 4 chunks
     add t0, t0, s10
@@ -172,19 +235,33 @@ fc1_chunk_loop:
     mul t0, t0, t1
     add a0, a0, t0
     call acc_write_fc_weights
-    mv a0, s6
-    li a1, 16
-    call acc_load_three_rows
-    call acc_reset_psums
-    call acc_start_fc
-    call acc_wait_done
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc1_wait_done:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc1_wait_done
     lw t0, 100(s0)                       # FC raw signed int32
-    add s11, s11, t0
+    slli t1, s9, 2
+    add t1, s7, t1
+    lw t2, 0(t1)
+    add t2, t2, t0
+    sw t2, 0(t1)
+    addi s9, s9, 1
+    j fc1_neuron_loop
+fc1_next_chunk:
     addi s10, s10, 1
     j fc1_chunk_loop
-fc1_finish_neuron:
-    blt s11, zero, fc1_store_zero
-    andi t0, s11, 255
+fc1_postprocess:
+    li s9, 0                             # postprocess FC1 sums
+fc1_postprocess_loop:
+    li t0, 10
+    bge s9, t0, fc1_done
+    slli t0, s9, 2
+    add t1, s7, t0
+    lw t2, 0(t1)
+    blt t2, zero, fc1_store_zero
+    andi t0, t2, 255
     j fc1_store_value
 fc1_store_zero:
     li t0, 0
@@ -192,7 +269,7 @@ fc1_store_value:
     add t1, s4, s9
     sb t0, 0(t1)
     addi s9, s9, 1
-    j fc1_neuron_loop
+    j fc1_postprocess_loop
 fc1_done:
     lw ra, 12(sp)
     addi sp, sp, 16
@@ -209,9 +286,12 @@ run_fc2:
     mv a0, s6
     li a1, 16
     call acc_load_three_rows
-    call acc_reset_psums
-    call acc_start_fc
-    call acc_wait_done
+    li t0, 0x000fffff                    # START_FC
+    sw t0, 0(s0)
+fc2_wait_done:
+    lw t0, 0(s0)
+    li t1, 1
+    bne t0, t1, fc2_wait_done
     lw t0, 100(s0)                       # FC raw signed int32
     blt t0, zero, fc2_store_zero
     andi t0, t0, 255

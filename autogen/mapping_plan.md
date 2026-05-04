@@ -126,11 +126,15 @@ For each sample `n`:
       for channel `ci`.
    3. For each output row `r = 0..11`, start a DMA prefetch for row `r+3`
       before starting CONV mode, except on the last output row.
-   4. Start CONV mode and poll `STATUS`.
-   5. Read raw signed sums from `BASE + 120` through `BASE + 160`.
-   6. Accumulate the first 11 raw sums into the corresponding row of the full
-      software int32 accumulator buffer.
-   7. Issue `SHIFT_LINES` after result handling to roll in the prefetched row,
+   4. Start CONV mode.
+   5. Read the first 11 raw signed sums from `BASE + 120` through `BASE + 160`
+      in order.
+   6. Accumulate those raw sums into the corresponding row of the full software
+      int32 accumulator buffer while later CONV columns are still being
+      computed.
+   7. Poll `STATUS` after the raw-result accumulation to guarantee the CONV
+      state machine is done before mutating the line buffer.
+   8. Issue `SHIFT_LINES` after result handling to roll in the prefetched row,
       except on the last output row.
 3. After all 10 channels are accumulated, apply final Conv2 postprocessing in
    software:
@@ -150,9 +154,9 @@ Expected Conv2 output per sample:
 FC1 maps to accelerator FC mode with software chunk accumulation. FC mode can
 compute 36 products per invocation; each FC1 output needs 132 products.
 
-For each sample `n` and FC1 output neuron `o = 0..9`:
+For each sample `n`:
 
-1. Initialize a software int32 accumulator to zero.
+1. Initialize 10 software int32 accumulators to zero.
 2. Split the 132 input features into four chunks:
    - chunk 0: features `0..35`
    - chunk 1: features `36..71`
@@ -161,15 +165,16 @@ For each sample `n` and FC1 output neuron `o = 0..9`:
 3. For each chunk:
    1. Arrange the 36 input bytes as three 16-byte DMA rows, using only columns
       `0..11` and padding the remaining row bytes.
-   2. Write the corresponding 36 signed weights into weight groups 0..3.
-   3. Load the three input rows into the accelerator line buffer.
-   4. Start FC mode and poll `STATUS`.
-   5. Read the raw signed int32 chunk sum from `BASE + 100`.
-   6. Add the chunk sum to the software accumulator.
+   2. Load the three input rows into the accelerator line buffer once.
+   3. For each FC1 output neuron `o = 0..9`:
+      1. Write the corresponding 36 signed weights into weight groups 0..3.
+      2. Start FC mode and poll `STATUS`.
+      3. Read the raw signed int32 chunk sum from `BASE + 100`.
+      4. Add the chunk sum to the software accumulator for neuron `o`.
 4. Apply final FC1 postprocessing in software:
    - if accumulator is negative, output `0`;
    - otherwise output `accumulator & 0xff`.
-5. Store the result as the FC1 activation for neuron `o`.
+5. Store the 10 results as FC1 activations.
 
 Expected FC1 output per sample:
 
@@ -209,6 +214,10 @@ Software must handle:
 - Weight loading before each accelerator invocation.
 - Explicit DMA waits for FC row loads, and CONV/DMA overlap where CONV
   computation provides enough time before `SHIFT_LINES`.
+- Avoiding redundant per-invocation reset commands on the current RTL.
+- Reusing FC1 chunk input loads across all 10 output neurons.
+- Overlapping Conv2 raw-result CPU accumulation with the current CONV
+  invocation while still waiting for `STATUS_DONE` before `SHIFT_LINES`.
 - CPU fallback for any operation that does not fit the accelerator's fixed
   CONV or FC modes.
 

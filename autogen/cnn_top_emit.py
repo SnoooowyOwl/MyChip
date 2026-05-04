@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from .accelerator_api import (
     ACC_BASE,
+    CMD_SHIFT_LINES,
+    CMD_START_CONV,
+    CMD_START_FC,
+    OFF_CTRL_STATUS,
     OFF_RAW_BASE,
     OFF_RES_PACK_0,
     OFF_RES_PACK_1,
@@ -37,6 +41,39 @@ from .cnn_config import (
     ROW_STRIDE,
 )
 from .rv32_emit import Rv32Emitter
+
+
+def emit_accel_command(e: Rv32Emitter, command: int, comment: str) -> None:
+    e.li("t0", command, comment=comment)
+    e.inst("sw", "t0", f"{OFF_CTRL_STATUS}(s0)")
+
+
+def emit_wait_done_inline(e: Rv32Emitter, label: str) -> None:
+    e.label(label)
+    e.inst("lw", "t0", f"{OFF_CTRL_STATUS}(s0)")
+    e.inst("li", "t1", "1")
+    e.inst("bne", "t0", "t1", label)
+
+
+def emit_store_packed_13_inline(e: Rv32Emitter) -> None:
+    e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)")
+    e.inst("sw", "t0", "0(a0)")
+    e.inst("lw", "t0", f"{OFF_RES_PACK_1}(s0)")
+    e.inst("sw", "t0", "4(a0)")
+    e.inst("lw", "t0", f"{OFF_RES_PACK_2}(s0)")
+    e.inst("sw", "t0", "8(a0)")
+    e.inst("lw", "t0", f"{OFF_RES_PACK_3}(s0)")
+    e.inst("sb", "t0", "12(a0)")
+
+
+def emit_conv2_accumulate_raw_11_unrolled(e: Rv32Emitter) -> None:
+    for idx in range(CONV2_W):
+        word_offset = idx * 4
+        raw_offset = OFF_RAW_BASE + word_offset
+        e.inst("lw", "t4", f"{word_offset}(a0)")
+        e.inst("lw", "t5", f"{raw_offset}(s0)")
+        e.inst("add", "t4", "t4", "t5")
+        e.inst("sw", "t4", f"{word_offset}(a0)")
 
 
 def emit_header(e: Rv32Emitter, sample_index: int | None = None, expected_output: int | None = None) -> None:
@@ -110,18 +147,17 @@ def emit_run_conv1(e: Rv32Emitter) -> None:
     e.inst("add", "a0", "s1", "t0")
     e.inst("sw", "a0", f"{OFF_SRC_ADDR}(s0)", comment="SET_DMA_ADDR")
     e.label("conv1_no_prefetch")
-    e.call("acc_reset_psums")
-    e.call("acc_start_conv")
-    e.call("acc_wait_done")
+    emit_accel_command(e, CMD_START_CONV, "START_CONV")
+    emit_wait_done_inline(e, "conv1_wait_done")
     e.inst("li", "t0", str(CONV1_CH_BYTES))
     e.inst("mul", "t1", "s9", "t0")
     e.inst("slli", "t2", "s10", "4")
     e.inst("add", "t1", "t1", "t2")
     e.inst("add", "a0", "s2", "t1")
-    e.call("acc_store_packed_13")
+    emit_store_packed_13_inline(e)
     e.inst("li", "t0", str(CONV1_H - 1))
     e.inst("bge", "s10", "t0", "conv1_skip_shift")
-    e.call("acc_shift_lines")
+    emit_accel_command(e, CMD_SHIFT_LINES, "SHIFT_LINES")
     e.label("conv1_skip_shift")
     e.inst("addi", "s10", "s10", "1")
     e.inst("j", "conv1_row_loop")
@@ -168,16 +204,15 @@ def emit_run_conv2(e: Rv32Emitter) -> None:
     e.inst("add", "a0", "s11", "t0")
     e.inst("sw", "a0", f"{OFF_SRC_ADDR}(s0)", comment="SET_DMA_ADDR")
     e.label("conv2_no_prefetch")
-    e.call("acc_reset_psums")
-    e.call("acc_start_conv")
-    e.call("acc_wait_done")
+    emit_accel_command(e, CMD_START_CONV, "START_CONV")
     e.inst("li", "t0", str(CONV2_W * 4))
     e.inst("mul", "t1", "s9", "t0")
     e.inst("add", "a0", "s7", "t1")
-    e.call("acc_accumulate_raw_11")
+    emit_conv2_accumulate_raw_11_unrolled(e)
+    emit_wait_done_inline(e, "conv2_wait_done")
     e.inst("li", "t0", str(CONV2_H - 1))
     e.inst("bge", "s9", "t0", "conv2_skip_shift")
-    e.call("acc_shift_lines")
+    emit_accel_command(e, CMD_SHIFT_LINES, "SHIFT_LINES")
     e.label("conv2_skip_shift")
     e.inst("addi", "s9", "s9", "1")
     e.inst("j", "conv2_row_loop")
@@ -208,18 +243,23 @@ def emit_run_fc1(e: Rv32Emitter) -> None:
     e.label("run_fc1")
     e.inst("addi", "sp", "sp", "-16")
     e.inst("sw", "ra", "12(sp)")
-    e.inst("li", "s9", "0", comment="FC1 output neuron")
-    e.label("fc1_neuron_loop")
-    e.inst("li", "t0", str(FC1_OUT))
-    e.inst("bge", "s9", "t0", "fc1_done")
-    e.inst("li", "s11", "0", comment="raw int32 neuron accumulator")
+    e.inst("mv", "a0", "s7", comment="reuse accumulator scratch for 10 FC1 sums")
+    e.inst("li", "a1", str(FC1_OUT))
+    e.call("zero_words")
     e.inst("li", "s10", "0", comment="FC1 chunk")
     e.label("fc1_chunk_loop")
     e.inst("li", "t0", str(FC1_CHUNKS))
-    e.inst("bge", "s10", "t0", "fc1_finish_neuron")
+    e.inst("bge", "s10", "t0", "fc1_postprocess")
     e.inst("li", "t0", str(FC_CHUNK))
     e.inst("mul", "a0", "s10", "t0", comment="chunk start feature")
     e.call("fill_fc_scratch_conv2")
+    e.inst("mv", "a0", "s6")
+    e.inst("li", "a1", str(ROW_STRIDE))
+    e.call("acc_load_three_rows")
+    e.inst("li", "s9", "0", comment="FC1 output neuron")
+    e.label("fc1_neuron_loop")
+    e.inst("li", "t0", str(FC1_OUT))
+    e.inst("bge", "s9", "t0", "fc1_next_chunk")
     e.la("a0", "fc1_w_packed")
     e.inst("slli", "t0", "s9", "2", comment="neuron * 4 chunks")
     e.inst("add", "t0", "t0", "s10")
@@ -227,19 +267,29 @@ def emit_run_fc1(e: Rv32Emitter) -> None:
     e.inst("mul", "t0", "t0", "t1")
     e.inst("add", "a0", "a0", "t0")
     e.call("acc_write_fc_weights")
-    e.inst("mv", "a0", "s6")
-    e.inst("li", "a1", str(ROW_STRIDE))
-    e.call("acc_load_three_rows")
-    e.call("acc_reset_psums")
-    e.call("acc_start_fc")
-    e.call("acc_wait_done")
+    emit_accel_command(e, CMD_START_FC, "START_FC")
+    emit_wait_done_inline(e, "fc1_wait_done")
     e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)", comment="FC raw signed int32")
-    e.inst("add", "s11", "s11", "t0")
+    e.inst("slli", "t1", "s9", "2")
+    e.inst("add", "t1", "s7", "t1")
+    e.inst("lw", "t2", "0(t1)")
+    e.inst("add", "t2", "t2", "t0")
+    e.inst("sw", "t2", "0(t1)")
+    e.inst("addi", "s9", "s9", "1")
+    e.inst("j", "fc1_neuron_loop")
+    e.label("fc1_next_chunk")
     e.inst("addi", "s10", "s10", "1")
     e.inst("j", "fc1_chunk_loop")
-    e.label("fc1_finish_neuron")
-    e.inst("blt", "s11", "zero", "fc1_store_zero")
-    e.inst("andi", "t0", "s11", "255")
+    e.label("fc1_postprocess")
+    e.inst("li", "s9", "0", comment="postprocess FC1 sums")
+    e.label("fc1_postprocess_loop")
+    e.inst("li", "t0", str(FC1_OUT))
+    e.inst("bge", "s9", "t0", "fc1_done")
+    e.inst("slli", "t0", "s9", "2")
+    e.inst("add", "t1", "s7", "t0")
+    e.inst("lw", "t2", "0(t1)")
+    e.inst("blt", "t2", "zero", "fc1_store_zero")
+    e.inst("andi", "t0", "t2", "255")
     e.inst("j", "fc1_store_value")
     e.label("fc1_store_zero")
     e.inst("li", "t0", "0")
@@ -247,7 +297,7 @@ def emit_run_fc1(e: Rv32Emitter) -> None:
     e.inst("add", "t1", "s4", "s9")
     e.inst("sb", "t0", "0(t1)")
     e.inst("addi", "s9", "s9", "1")
-    e.inst("j", "fc1_neuron_loop")
+    e.inst("j", "fc1_postprocess_loop")
     e.label("fc1_done")
     e.inst("lw", "ra", "12(sp)")
     e.inst("addi", "sp", "sp", "16")
@@ -267,9 +317,8 @@ def emit_run_fc2(e: Rv32Emitter) -> None:
     e.inst("mv", "a0", "s6")
     e.inst("li", "a1", str(ROW_STRIDE))
     e.call("acc_load_three_rows")
-    e.call("acc_reset_psums")
-    e.call("acc_start_fc")
-    e.call("acc_wait_done")
+    emit_accel_command(e, CMD_START_FC, "START_FC")
+    emit_wait_done_inline(e, "fc2_wait_done")
     e.inst("lw", "t0", f"{OFF_RES_PACK_0}(s0)", comment="FC raw signed int32")
     e.inst("blt", "t0", "zero", "fc2_store_zero")
     e.inst("andi", "t0", "t0", "255")
