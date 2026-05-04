@@ -117,25 +117,66 @@ Example assembly lives under `examples/testcode/`.
 
 ## CNN Autogen Flow
 
-The CNN code generator lives outside this directory under `../autogen/`. It
-maps the quantized model in `../python/network_structure.py` onto the fixed
-accelerator RTL without changing hardware.
+The CNN software framework lives outside this directory under `../autogen/`.
+That directory contains two workflow folders plus shared environment helpers:
+
+- `../autogen/python/`: manual Python codegen that emits low-level RV32
+  assembly and SRAM images.
+- `../autogen/compiler/`: C/compiler workflow that compiles a checked-in
+  freestanding C schedule for the current CNN.
+- `../autogen/project_config.py` and `../autogen/check_env.py`: shared
+  environment configuration and validation.
+
+Both workflows map the quantized model in `../python/network_structure.py` onto
+the fixed accelerator RTL without changing hardware.
 
 Important files:
 
 | Path | Role |
 | --- | --- |
-| `../autogen/cnn_config.py` | CNN dimensions, memory layout, output address, DMA wait count, and toolchain paths. |
-| `../autogen/accelerator_api.py` | Python API layer that emits RV32 accelerator register sequences. |
-| `../autogen/cnn_top_emit.py` | Top-level CNN schedule emitter. |
-| `../autogen/generate_cnn.py` | Code generation entry point. |
-| `../autogen/verify_cnn.py` | Separate reference-model, codegen, SRAM-image, and toolchain verification. |
-| `../autogen/out/cnn_accel_one_sample.S` | Generated raw RV32 assembly for sample 0. |
-| `../autogen/out/icache_initial.hex` | Generated 2048-word instruction SRAM image. |
-| `../autogen/out/dcache_initial.hex` | Generated 2048-word data SRAM image. |
-| `../autogen/out/testcases/sample*/` | Five per-sample RTL test cases, each with assembly, I-cache hex, D-cache hex, and expected output metadata. |
+| `../autogen/project_config.py` | Project-wide path defaults and RISC-V toolchain environment resolution. |
+| `../autogen/check_env.py` | Environment checker for required model files and RISC-V toolchain executables. |
+| `../autogen/python/cnn_config.py` | Manual workflow CNN dimensions, memory layout, output address, DMA wait count, and toolchain paths. |
+| `../autogen/python/accelerator_api.py` | Python API layer that emits manual RV32 accelerator register sequences. |
+| `../autogen/python/cnn_top_emit.py` | Manual low-level CNN schedule emitter. |
+| `../autogen/python/generate_cnn.py` | Manual low-level assembly generation entry point. |
+| `../autogen/python/verify_cnn.py` | Manual workflow reference-model, codegen, SRAM-image, and toolchain verification. |
+| `../autogen/python/mapping_plan.md` | CNN-to-accelerator mapping strategy and optimization notes. |
+| `../autogen/python/out/cnn_accel_one_sample.S` | Manual generated raw RV32 assembly for sample 0. |
+| `../autogen/python/out/icache_initial.hex` | Manual workflow instruction SRAM image. |
+| `../autogen/python/out/dcache_initial.hex` | Manual workflow data SRAM image. |
+| `../autogen/python/out/testcases/sample*/` | Five manual per-sample RTL test cases. |
+| `../autogen/compiler/cnn_config.py` | Compiler workflow CNN dimensions, memory layout, output address, DMA wait count, and toolchain paths. |
+| `../autogen/compiler/accel_runtime.h` | Freestanding C accelerator MMIO API. |
+| `../autogen/compiler/cnn_accel.c` | Checked-in raw C implementation of the current CNN accelerator schedule. |
+| `../autogen/compiler/memory.ld` | Linker script for direct RISC-V GCC calls. |
+| `../autogen/compiler/build_current_cnn.py` | C/compiler workflow build entry point for the current CNN. |
+| `../autogen/compiler/build_c_program.py` | Utility for compiling handwritten freestanding C into raw assembly and SRAM hex images. |
+| `../autogen/compiler/verify_cnn.py` | Compiler workflow reference-model, C-build, SRAM-image, and toolchain verification. |
+| `../autogen/compiler/out/cnn_accel.S` | GCC-generated RV32 assembly for compiler workflow sample 0. |
+| `../autogen/compiler/out/dcache_init.S` | Compiler workflow D-cache initialization assembly for sample 0. |
+| `../autogen/compiler/out/icache_initial.hex` | Compiler workflow instruction SRAM image. |
+| `../autogen/compiler/out/dcache_initial.hex` | Compiler workflow data SRAM image. |
 
-The generator uses the installed RISC-V toolchain at:
+Project-wide environment defaults live in `../autogen/project_config.py`. On a new
+machine, set the RISC-V toolchain root and run the environment check from the
+repository root:
+
+```sh
+export RISCV_TOOLCHAIN_ROOT=/path/to/xpack-riscv-none-elf-gcc
+python3 autogen/check_env.py
+```
+
+If the tools are installed in nonstandard locations, set the individual paths:
+
+```sh
+export RISCV_GCC=/path/to/riscv-none-elf-gcc
+export RISCV_OBJCOPY=/path/to/riscv-none-elf-objcopy
+export RISCV_OBJDUMP=/path/to/riscv-none-elf-objdump
+python3 autogen/check_env.py
+```
+
+The default fallback RISC-V toolchain root is:
 
 ```text
 /data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1
@@ -152,19 +193,72 @@ generated sample outputs are:
 | sample3 | `0x0000009c` |
 | sample4 | `0x00000000` |
 
+Manual workflow commands:
+
+```sh
+python3 autogen/python/generate_cnn.py
+python3 autogen/python/verify_cnn.py
+```
+
+C/compiler workflow commands:
+
+```sh
+python3 autogen/compiler/build_current_cnn.py
+python3 autogen/compiler/verify_cnn.py
+```
+
+The compiler workflow is intended for programmability and still uses the
+accelerator for CONV and FC work. The default C flags are `-Os
+-fno-jump-tables -fno-tree-loop-distribute-patterns` so the image fits the
+8 KiB I-cache SRAM. Handwritten C can be compiled through
+`python3 autogen/compiler/build_c_program.py`.
+
+The raw C source is `../autogen/compiler/cnn_accel.c`. To call the RISC-V
+compiler directly from the repository root:
+
+```sh
+RISCV_GCC=${RISCV_GCC:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-gcc}
+
+$RISCV_GCC \
+  -march=rv32im -mabi=ilp32 -mcmodel=medany \
+  -ffreestanding -fno-builtin -fno-common -fno-pic \
+  -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
+  -Os -fno-jump-tables -fno-tree-loop-distribute-patterns \
+  -Iautogen/compiler \
+  -S autogen/compiler/cnn_accel.c \
+  -o autogen/compiler/out/cnn_accel.S
+```
+
+To link it with the generated sample data:
+
+```sh
+python3 autogen/compiler/build_current_cnn.py --sample 0
+
+RISCV_GCC=${RISCV_GCC:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-gcc}
+
+$RISCV_GCC \
+  -march=rv32im -mabi=ilp32 -mcmodel=medany \
+  -ffreestanding -fno-builtin -fno-common -fno-pic \
+  -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
+  -Os -fno-jump-tables -fno-tree-loop-distribute-patterns \
+  -nostdlib -nostartfiles -Wl,--no-relax \
+  -Wl,-T,autogen/compiler/memory.ld -Wl,-e,_start \
+  -Iautogen/compiler \
+  autogen/compiler/cnn_accel.c autogen/compiler/out/dcache_init.S \
+  -o autogen/compiler/out/cnn_accel.elf
+```
+
 ## Current Software Optimizations
 
-These optimizations are implemented in the generated RV32 code while keeping
-the current RTL fixed:
+These optimizations are implemented while keeping the current RTL fixed:
 
-- DMA wait for explicit row-load helpers is reduced to `10` nops in
+- Explicit DMA waits are reduced to `10` nops in each workflow's
   `cnn_config.py`.
 - Conv1 and Conv2 overlap DMA prefetch with the current CONV computation:
   software writes the next DMA source address, starts CONV, handles current
   results, waits for `STATUS_DONE`, then issues `SHIFT_LINES`.
-- Hot control paths inline `START_CONV`, `START_FC`, `SHIFT_LINES`, status
-  polling, Conv1 packed stores, and Conv2 raw accumulation instead of calling
-  small helper functions.
+- Hot manual control paths inline `START_CONV`, `START_FC`, `SHIFT_LINES`,
+  status polling, Conv1 packed stores, and Conv2 raw accumulation.
 - Generated hot paths do not issue per-invocation `RESET_PSUMS`; `START_CONV`
   overwrites CONV result registers and `START_FC` clears the FC accumulator in
   the current RTL.
@@ -172,22 +266,18 @@ the current RTL fixed:
   truncation.
 - Conv2 reads raw signed 32-bit CONV outputs, accumulates across the 10 input
   channels in CPU memory, then CPU software applies ReLU and low-8 truncation.
-- Conv2 uses a fixed 12-row unrolled schedule. The CPU accumulates the first 11
-  raw outputs while later CONV columns are still being computed, then waits
-  before mutating the line buffer.
-- FC1 reuses each loaded 36-byte input chunk across all 10 output neurons. The
-  four chunks by ten neurons are emitted directly, and FC1 postprocessing is
-  unrolled.
-- FC1 and FC2 scratch packing use generated fixed-offset loads/stores instead
-  of runtime lookup-table loops; the old scratch-offset tables are not emitted
-  into D-cache initialization data.
-- The verifier checks both individual 8 KiB I-cache/D-cache image limits and
-  the combined 16 KiB initialized-memory budget. The current generated sample 0
-  link is about `0x1d5c` bytes of `.text` plus `0x16a0` bytes of initialized
-  D-cache data, for `0x33fc` bytes total.
+- Conv2 uses a fixed 12-row unrolled schedule. The CPU accumulates raw outputs
+  while later CONV columns are still being computed, then waits before mutating
+  the line buffer.
+- FC1 reuses each loaded 36-byte input chunk across all 10 output neurons.
+- FC1 and FC2 scratch packing use fixed-offset loads/stores instead of runtime
+  lookup-table loops.
+- The verifiers check both individual 8 KiB I-cache/D-cache image limits and
+  the combined 16 KiB initialized-memory budget.
 
-The final output byte address is controlled by `OUTPUT_ADDR` in
-`../autogen/cnn_config.py`. The default is `0x90000b20`.
+The final output byte address is controlled by `OUTPUT_ADDR` in the selected
+workflow config, either `../autogen/python/cnn_config.py` or
+`../autogen/compiler/cnn_config.py`. The default is `0x90000b20`.
 
 ## CPU RTL and Support Files
 
