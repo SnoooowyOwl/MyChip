@@ -99,6 +99,62 @@ python3 autogen/compiler/build_c_program.py \
   --out-dir autogen/compiler/out/user_c
 ```
 
+To use the checked-in `autogen/compiler/cnn_accel.c` with another input, provide
+a matching `.dcache_init` assembly file for that input and run:
+
+```sh
+python3 autogen/compiler/build_c_program.py \
+  --c autogen/compiler/cnn_accel.c \
+  --dcache-asm path/to/my_dcache_init.S \
+  --out-dir autogen/compiler/out/my_input
+```
+
+This command calls the RISC-V compiler and writes:
+
+```text
+autogen/compiler/out/my_input/cnn_accel.S
+autogen/compiler/out/my_input/icache_initial.hex
+autogen/compiler/out/my_input/dcache_initial.hex
+```
+
+The `.dcache_init` file supplies the initialized D-cache contents: padded input
+at offset `0x0` and packed weights at offset `0xe00`. Existing examples are
+under `autogen/compiler/out/testcases/sample*/dcache_init_sample*.S`.
+
+If you do not want to use any Python scripts, manually call GCC and objcopy:
+
+```sh
+RISCV_GCC=${RISCV_GCC:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-gcc}
+RISCV_OBJCOPY=${RISCV_OBJCOPY:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-objcopy}
+OUT=autogen/compiler/out/manual
+mkdir -p $OUT
+
+$RISCV_GCC \
+  -march=rv32im -mabi=ilp32 -mcmodel=medany \
+  -ffreestanding -fno-builtin -fno-common -fno-pic \
+  -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
+  -Os -fno-jump-tables -fno-tree-loop-distribute-patterns \
+  -nostdlib -nostartfiles -Wl,--no-relax \
+  -Wl,-T,autogen/compiler/memory.ld -Wl,-e,_start \
+  -Iautogen/compiler \
+  autogen/compiler/cnn_accel.c path/to/my_dcache_init.S \
+  -o $OUT/cnn_accel.elf
+
+$RISCV_OBJCOPY \
+  --dump-section .text=$OUT/icache.bin \
+  --dump-section .dcache_init=$OUT/dcache.bin \
+  $OUT/cnn_accel.elf
+
+truncate -s 8192 $OUT/icache.bin
+truncate -s 8192 $OUT/dcache.bin
+
+od -An -v -t x4 -w4 $OUT/icache.bin | awk '{print toupper($1)}' > $OUT/icache_initial.hex
+od -An -v -t x4 -w4 $OUT/dcache.bin | awk '{print toupper($1)}' > $OUT/dcache_initial.hex
+```
+
+Load `$OUT/icache_initial.hex` into the I-cache SRAM and
+`$OUT/dcache_initial.hex` into the D-cache SRAM.
+
 ## RTL Simulation Inputs
 
 The generated SRAM images are `$readmemh`-style files with one 32-bit word per

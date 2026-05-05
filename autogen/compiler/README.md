@@ -71,11 +71,98 @@ The default C flags are `-Os -fno-jump-tables
 The compiler workflow improves programmability while still using the accelerator
 for CONV and FC operations.
 
-## Direct Compiler Call
+## Manual Compiler Flow Without Python
 
-The wrapper above is the recommended path because it also creates
-`icache_initial.hex` and `dcache_initial.hex`. To call the RISC-V compiler
-directly on the raw C source, use the same flags:
+If you already have a freestanding C program such as `cnn_accel.c` and do not
+want to use any Python build scripts, do the following manually.
+
+Inputs required:
+
+- C program, for example `autogen/compiler/cnn_accel.c`.
+- Runtime header include path, normally `-Iautogen/compiler` if the C file uses
+  `accel_runtime.h`.
+- Linker script `autogen/compiler/memory.ld`.
+- Optional D-cache initialization assembly file. The current CNN needs this
+  file because `cnn_accel.c` refers to `input0_padded`, `conv1_w_packed`,
+  `conv2_w_packed`, `fc1_w_packed`, and `fc2_w_packed`.
+
+Set tool paths:
+
+```sh
+RISCV_GCC=${RISCV_GCC:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-gcc}
+RISCV_OBJCOPY=${RISCV_OBJCOPY:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-objcopy}
+OUT=autogen/compiler/out/manual
+mkdir -p $OUT
+```
+
+Compile to raw assembly if you want to inspect what GCC emitted:
+
+```sh
+$RISCV_GCC \
+  -march=rv32im -mabi=ilp32 -mcmodel=medany \
+  -ffreestanding -fno-builtin -fno-common -fno-pic \
+  -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
+  -Os -fno-jump-tables -fno-tree-loop-distribute-patterns \
+  -Iautogen/compiler \
+  -S autogen/compiler/cnn_accel.c \
+  -o $OUT/cnn_accel.S
+```
+
+Link the program and D-cache init data into one ELF. Replace
+`autogen/compiler/out/dcache_init.S` with your own `.dcache_init` assembly file
+for another input.
+
+```sh
+$RISCV_GCC \
+  -march=rv32im -mabi=ilp32 -mcmodel=medany \
+  -ffreestanding -fno-builtin -fno-common -fno-pic \
+  -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
+  -Os -fno-jump-tables -fno-tree-loop-distribute-patterns \
+  -nostdlib -nostartfiles -Wl,--no-relax \
+  -Wl,-T,autogen/compiler/memory.ld -Wl,-e,_start \
+  -Iautogen/compiler \
+  autogen/compiler/cnn_accel.c autogen/compiler/out/dcache_init.S \
+  -o $OUT/cnn_accel.elf
+```
+
+Extract the two SRAM regions from the ELF:
+
+```sh
+$RISCV_OBJCOPY \
+  --dump-section .text=$OUT/icache.bin \
+  --dump-section .dcache_init=$OUT/dcache.bin \
+  $OUT/cnn_accel.elf
+```
+
+Pad each binary to the 8 KiB SRAM size and convert it to one little-endian
+32-bit word per line:
+
+```sh
+truncate -s 8192 $OUT/icache.bin
+truncate -s 8192 $OUT/dcache.bin
+
+od -An -v -t x4 -w4 $OUT/icache.bin | awk '{print toupper($1)}' > $OUT/icache_initial.hex
+od -An -v -t x4 -w4 $OUT/dcache.bin | awk '{print toupper($1)}' > $OUT/dcache_initial.hex
+```
+
+The two files to load in RTL are then:
+
+```text
+$OUT/icache_initial.hex
+$OUT/dcache_initial.hex
+```
+
+`memory.ld` places `.text` at `0x80000000` and `.dcache_init` at
+`0x90000000`. The hex files do not contain absolute addresses; they are SRAM
+contents starting at offset 0.
+
+The C program must be freestanding: define `_start`, avoid libc, and keep
+ordinary `.data` and `.bss` empty. The linker script asserts this because data
+that must exist at reset belongs in `.dcache_init`.
+
+## C-To-Assembly Only
+
+To only compile the raw C source to assembly, use:
 
 ```sh
 RISCV_GCC=${RISCV_GCC:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-gcc}
@@ -90,25 +177,6 @@ $RISCV_GCC \
   -o autogen/compiler/out/cnn_accel.S
 ```
 
-To link the raw C source with the generated sample data:
-
-```sh
-python3 autogen/compiler/build_current_cnn.py --sample 0
-
-RISCV_GCC=${RISCV_GCC:-${RISCV_TOOLCHAIN_ROOT:-/data/yxx/tools/riscv/xpack-riscv-none-elf-gcc/xpack-riscv-none-elf-gcc-15.2.0-1}/bin/riscv-none-elf-gcc}
-
-$RISCV_GCC \
-  -march=rv32im -mabi=ilp32 -mcmodel=medany \
-  -ffreestanding -fno-builtin -fno-common -fno-pic \
-  -fno-stack-protector -fno-asynchronous-unwind-tables -fno-unwind-tables \
-  -Os -fno-jump-tables -fno-tree-loop-distribute-patterns \
-  -nostdlib -nostartfiles -Wl,--no-relax \
-  -Wl,-T,autogen/compiler/memory.ld -Wl,-e,_start \
-  -Iautogen/compiler \
-  autogen/compiler/cnn_accel.c autogen/compiler/out/dcache_init.S \
-  -o autogen/compiler/out/cnn_accel.elf
-```
-
 For handwritten C, keep the same runtime header and let the wrapper produce the
 SRAM hex files:
 
@@ -117,4 +185,77 @@ python3 autogen/compiler/build_c_program.py \
   --c path/to/program.c \
   --dcache-asm autogen/compiler/out/dcache_init.S \
   --out-dir autogen/compiler/out/user_c
+```
+
+## Using `cnn_accel.c` With Another Input
+
+`cnn_accel.c` is the program only. The input image and packed weights are not
+inside the C file; they must be provided through an assembly file containing a
+`.dcache_init` section. For the current samples, examples are:
+
+```text
+autogen/compiler/out/dcache_init.S
+autogen/compiler/out/testcases/sample0/dcache_init_sample0.S
+autogen/compiler/out/testcases/sample1/dcache_init_sample1.S
+```
+
+For a new input, create a file such as `my_dcache_init.S` with this contract:
+
+```asm
+    .section .dcache_init,"aw"
+    .align 2
+    .org 0x0
+    .globl input0_padded
+input0_padded:
+    # 16 rows, each row is 15 input bytes plus one zero pad byte.
+
+    .align 2
+    .org 0xe00
+    .globl conv1_w_packed
+conv1_w_packed:
+    # packed Conv1 weights as .word values
+
+    .align 2
+    .globl conv2_w_packed
+conv2_w_packed:
+    # packed Conv2 weights as .word values
+
+    .align 2
+    .globl fc1_w_packed
+fc1_w_packed:
+    # packed FC1 weights as .word values
+
+    .align 2
+    .globl fc2_w_packed
+fc2_w_packed:
+    # packed FC2 weights as .word values
+```
+
+If only the input changes and the model weights stay the same, copy an existing
+`dcache_init_sample*.S` file and replace only the bytes under `input0_padded`.
+
+Then run:
+
+```sh
+python3 autogen/compiler/build_c_program.py \
+  --c autogen/compiler/cnn_accel.c \
+  --dcache-asm path/to/my_dcache_init.S \
+  --out-dir autogen/compiler/out/my_input
+```
+
+This calls the RISC-V compiler and writes:
+
+```text
+autogen/compiler/out/my_input/cnn_accel.S
+autogen/compiler/out/my_input/icache_initial.hex
+autogen/compiler/out/my_input/dcache_initial.hex
+```
+
+Use those two hex files to initialize the RTL I-cache and D-cache SRAMs. The
+hex files are SRAM contents starting at offset 0; the address mapping comes from
+the RTL and linker script:
+
+```text
+0x80000000 + offset -> icache_initial.hex[offset]
+0x90000000 + offset -> dcache_initial.hex[offset]
 ```
