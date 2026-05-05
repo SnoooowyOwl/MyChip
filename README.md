@@ -47,6 +47,24 @@ The current fallback default is:
 
 There are two supported workflows under `autogen/`.
 
+To generate one random input with the fixed weights and build both workflows in
+one command:
+
+```sh
+python3 autogen/run_random_input.py --seed 123
+```
+
+This writes:
+
+```text
+autogen/python/out/random/
+autogen/compiler/out/random/
+```
+
+Each directory contains `icache_initial.hex`, `dcache_initial.hex`,
+`expected.txt`, and `input.txt`. The compiler output also includes
+`dcache_init_random.S`; the manual output includes `cnn_accel_random.S`.
+
 ### Manual Python Workflow
 
 This path emits hand-scheduled RV32 assembly and SRAM initialization images:
@@ -191,6 +209,7 @@ Run these from the repository root:
 
 ```sh
 python3 autogen/check_env.py
+python3 autogen/run_random_input.py --seed 123
 python3 autogen/python/verify_cnn.py
 python3 autogen/compiler/verify_cnn.py
 ```

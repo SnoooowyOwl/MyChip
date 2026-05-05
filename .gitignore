@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+
+/autogen/python/out/random/
+/autogen/compiler/out/random/

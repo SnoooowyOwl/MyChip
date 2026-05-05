@@ -43,6 +43,17 @@ python3 autogen/compiler/build_current_cnn.py
 python3 autogen/compiler/verify_cnn.py
 ```
 
+To generate one random input using the fixed weights and emit both the manual
+and compiler workflow outputs:
+
+```sh
+python3 autogen/run_random_input.py --seed 123
+```
+
+The compiler workflow artifacts are written under
+`autogen/compiler/out/random/`. Use `--name NAME` to choose another output
+subdirectory.
+
 Generated files are written under `autogen/compiler/out/`:
 
 | Path | Purpose |
